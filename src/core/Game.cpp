@@ -159,6 +159,11 @@ bool
 CGame::InitialiseOnceBeforeRW(void)
 {
 	CFileMgr::Initialise();
+#ifdef AURORAOS
+	std::string path = getenv("HOME");
+	path += "/Documents/GTA3";
+	CFileMgr::ChangeDir(path.c_str());
+#endif
 	CdStreamInit(MAX_CDCHANNELS);
 	ValidateVersion();
 #ifdef EXTENDED_COLOURFILTER
