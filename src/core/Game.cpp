@@ -162,6 +162,11 @@ bool
 CGame::InitialiseOnceBeforeRW(void)
 {
 	CFileMgr::Initialise();
+#ifdef AURORAOS
+	std::string path = getenv("HOME");
+	path += "/Documents/GTA3";
+	CFileMgr::ChangeDir(path.c_str());
+#endif
 	CdStreamInit(MAX_CDCHANNELS);
 	debug("size of matrix %d\n", sizeof(CMatrix));
 	debug("size of placeable %d\n", sizeof(CPlaceable));

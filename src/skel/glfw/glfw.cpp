@@ -850,6 +850,18 @@ psSelectDevice()
 		for(GcurSelVM = 0; GcurSelVM < RwEngineGetNumVideoModes(); GcurSelVM++){
 			RwEngineGetVideoModeInfo(&vm, GcurSelVM);
 
+#ifdef AURORAOS
+			// change width and height for landscape rendering
+			if (vm.width < vm.height) {
+				if (FrontEndMenuManager.m_nPrefsWidth > FrontEndMenuManager.m_nPrefsHeight) {
+					std::swap(vm.width, vm.height);
+				}
+			} else {
+				if (FrontEndMenuManager.m_nPrefsWidth < FrontEndMenuManager.m_nPrefsHeight) {
+					std::swap(vm.width, vm.height);
+				}
+			}
+#endif
 			if (!(vm.flags & rwVIDEOMODEEXCLUSIVE)){
 				bestWndMode = GcurSelVM;
 			} else {
