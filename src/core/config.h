@@ -5,6 +5,10 @@
 #define VANILLA_DEFINES
 #endif
 
+#ifdef AURORAOS
+#define OFFSCREEN_RENDER
+#endif 
+
 enum Config {
 	NUMPLAYERS = 1,	// 4 on PS2
 

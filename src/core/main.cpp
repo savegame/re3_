@@ -226,6 +226,10 @@ DoRWStuffStartOfFrame(int16 TopRed, int16 TopGreen, int16 TopBlue, int16 BottomR
 bool
 DoRWStuffStartOfFrame_Horizon(int16 TopRed, int16 TopGreen, int16 TopBlue, int16 BottomRed, int16 BottomGreen, int16 BottomBlue, int16 Alpha)
 {
+#ifdef OFFSCREEN_RENDER
+ 	// Redirect rendering to offscreen BEFORE camera begin update
+	OffscreenRenderer::BeginFrame();
+#endif
 #ifndef ASPECT_RATIO_SCALE
 	CameraSize(Scene.camera, nil, SCREEN_VIEWWINDOW, (CMenuManager::m_PrefsUseWideScreen ? 16.f/9.f : 4.f/3.f));
 #else

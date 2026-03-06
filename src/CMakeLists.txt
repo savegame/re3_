@@ -54,6 +54,7 @@ target_compile_definitions(${EXECUTABLE} PRIVATE USE_OUR_VERSIONING)
 
 if(AURORAOS)
     target_compile_definitions(${EXECUTABLE} PRIVATE AURORAOS)
+    target_compile_definitions(${EXECUTABLE} PRIVATE OFFSCREEN_RENDER)
 endif()
 if(${PROJECT}_AUDIO STREQUAL "OAL")
     find_package(OpenAL REQUIRED)
