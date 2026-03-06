@@ -65,6 +65,10 @@ long _dwOperatingSystemVersion;
 #include <GLFW/glfw3native.h>
 #endif
 
+#ifdef OFFSCREEN_RENDER
+#include "OffscreenRenderer.h"
+#endif
+
 #define MAX_SUBSYSTEMS		(16)
 
 rw::EngineOpenParams openParams;
@@ -181,6 +185,10 @@ const char *_psGetUserFilesFolder()
 RwBool
 psCameraBeginUpdate(RwCamera *camera)
 {
+#ifdef OFFSCREEN_RENDER
+	OffscreenRenderer::BeginFrame();
+#endif
+
 	if ( !RwCameraBeginUpdate(Scene.camera) )
 	{
 		ForegroundApp = FALSE;
@@ -197,6 +205,10 @@ psCameraBeginUpdate(RwCamera *camera)
 void
 psCameraShowRaster(RwCamera *camera)
 {
+#ifdef OFFSCREEN_RENDER
+	OffscreenRenderer::EndFrame();
+#endif
+
 #ifdef LEGACY_MENU_OPTIONS
 	if (FrontEndMenuManager.m_PrefsVsync || FrontEndMenuManager.m_bMenuActive)
 #else
@@ -850,21 +862,16 @@ psSelectDevice()
 		for(GcurSelVM = 0; GcurSelVM < RwEngineGetNumVideoModes(); GcurSelVM++){
 			RwEngineGetVideoModeInfo(&vm, GcurSelVM);
 
-#ifdef AURORAOS
-			// change width and height for landscape rendering
-			if (vm.width < vm.height) {
-				if (FrontEndMenuManager.m_nPrefsWidth > FrontEndMenuManager.m_nPrefsHeight) {
-					std::swap(vm.width, vm.height);
-				}
-			} else {
-				if (FrontEndMenuManager.m_nPrefsWidth < FrontEndMenuManager.m_nPrefsHeight) {
-					std::swap(vm.width, vm.height);
-				}
-			}
-#endif
 			if (!(vm.flags & rwVIDEOMODEEXCLUSIVE)){
 				bestWndMode = GcurSelVM;
 			} else {
+#ifdef AURORAOS
+				bestWidth = vm.width;
+				bestHeight = vm.height;
+				bestDepth = vm.depth;
+				bestFsMode = GcurSelVM;
+				break;
+#else
 				// try the largest one that isn't larger than what we wanted
 				if(vm.width >= bestWidth && vm.width <= FrontEndMenuManager.m_nPrefsWidth &&
 				   vm.height >= bestHeight && vm.height <= FrontEndMenuManager.m_nPrefsHeight &&
@@ -874,6 +881,7 @@ psSelectDevice()
 					bestDepth = vm.depth;
 					bestFsMode = GcurSelVM;
 				}
+#endif
 			}
 		}
 
@@ -1905,6 +1913,10 @@ WinMain(HINSTANCE instance,
 int
 main(int argc, char *argv[])
 {
+#ifdef _AURORAOS_
+	// enable right audio routing
+	setenv("PULSE_PROP_media.role", "x-maemo", 1);
+#endif 
 #endif
 	RwV2d pos;
 	RwInt32 i;

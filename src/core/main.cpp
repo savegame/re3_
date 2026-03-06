@@ -227,6 +227,13 @@ bool
 DoRWStuffStartOfFrame_Horizon(int16 TopRed, int16 TopGreen, int16 TopBlue, int16 BottomRed, int16 BottomGreen, int16 BottomBlue, int16 Alpha)
 {
 	CDraw::CalculateAspectRatio();
+#ifdef OFFSCREEN_RENDER
+ 	// Redirect rendering to offscreen BEFORE camera begin update
+	OffscreenRenderer::BeginFrame();
+#endif
+#ifndef ASPECT_RATIO_SCALE
+	CameraSize(Scene.camera, nil, SCREEN_VIEWWINDOW, (CMenuManager::m_PrefsUseWideScreen ? 16.f/9.f : 4.f/3.f));
+#else
 	CameraSize(Scene.camera, nil, SCREEN_VIEWWINDOW, SCREEN_ASPECT_RATIO);
 	CVisibilityPlugins::SetRenderWareCamera(Scene.camera);
 	RwCameraClear(Scene.camera, &gColourTop, CLEARMODE);

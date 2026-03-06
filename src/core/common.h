@@ -400,3 +400,6 @@ template<int s, int t> struct check_size {
 #define CONCAT_(x,y) x##y
 #define CONCAT(x,y) CONCAT_(x,y)
 
+#ifdef OFFSCREEN_RENDER
+#include "OffscreenRenderer.h"
+#endif
