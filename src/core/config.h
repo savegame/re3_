@@ -5,7 +5,7 @@
 #define VANILLA_DEFINES
 #endif
 
-#ifdef AURORAOS
+#if defined(AURORAOS) && !defined(OFFSCREEN_RENDER)
 #define OFFSCREEN_RENDER
 #endif 
 
