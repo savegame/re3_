@@ -970,6 +970,7 @@ void cursorEnterCB(GLFWwindow* window, int entered);
 void windowFocusCB(GLFWwindow* window, int focused);
 void windowIconifyCB(GLFWwindow* window, int iconified);
 void joysChangeCB(int jid, int event);
+void monitorCB(GLFWmonitor* monitor, int event);
 
 bool IsThisJoystickBlacklisted(int i)
 {
@@ -1089,6 +1090,8 @@ void psPostRWinit(void)
 	glfwSetWindowIconifyCallback(PSGLOBAL(window), windowIconifyCB);
 	glfwSetWindowFocusCallback(PSGLOBAL(window), windowFocusCB);
 	glfwSetJoystickCallback(joysChangeCB);
+
+	glfwSetMonitorCallback(monitorCB);
 
 	_InputInitialiseJoys();
 	_InputInitialiseMouse(false);
@@ -2618,6 +2621,27 @@ void joysChangeCB(int jid, int event)
 		} else if (PSGLOBAL(joy2id) == jid)
 			PSGLOBAL(joy2id) = -1;
 	}
+}
+
+void
+monitorCB(GLFWmonitor* monitor, int event)
+{
+    if (event == GLFW_TRANSFORM_CHANGED)
+    {
+        int transform = glfwGetMonitorTransform(monitor);
+        
+        switch (transform)
+        {
+        case GLFW_TRANSFORM_NORMAL:
+        case GLFW_TRANSFORM_270:
+            OffscreenRenderer::SetRotation(OffscreenRenderer::ROTATE_90);
+            break;
+        case GLFW_TRANSFORM_180:
+        case GLFW_TRANSFORM_90:
+            OffscreenRenderer::SetRotation(OffscreenRenderer::ROTATE_270);
+            break;
+        }
+    }
 }
 
 #if (defined(_MSC_VER))
