@@ -61,6 +61,17 @@ int _caserename(const char *old_filename, const char *new_filename);
 #endif
 
 #ifdef RW_GL3
+// Touch state for mouse emulation
+struct psTouchState
+{
+    int     activeIndex;      // -1 = no active touch
+    bool    pressed;          // current LMB emulation state
+    bool    justTouched;      // just touched, for update position only
+    double  x, y;             // current position (window coords)
+    double  prevX, prevY;     // previous position for delta calculation
+    bool    hasPrev;          // have valid previous position?
+};
+
 typedef struct
 {
     GLFWwindow* window;
@@ -70,6 +81,7 @@ typedef struct
     bool        cursorIsInWindow;
     RwInt8        joy1id;
     RwInt8        joy2id;
+    psTouchState  touchMouse; // emulated mouse touch state
 }
 psGlobalType;
 

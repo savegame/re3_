@@ -428,6 +428,14 @@ psInitialize(void)
 	PsGlobal.joy1id	= -1;
 	PsGlobal.joy2id	= -1;
 
+	PsGlobal.touchMouse.activeIndex = -1;
+	PsGlobal.touchMouse.pressed = false;
+	PsGlobal.touchMouse.x = 0;
+	PsGlobal.touchMouse.y = 0;
+	PsGlobal.touchMouse.prevX = 0;
+	PsGlobal.touchMouse.prevY = 0;
+	PsGlobal.touchMouse.hasPrev = false;
+
 	CFileMgr::Initialise();
 	
 #ifdef PS2_MENU
@@ -970,6 +978,7 @@ void cursorEnterCB(GLFWwindow* window, int entered);
 void windowFocusCB(GLFWwindow* window, int focused);
 void windowIconifyCB(GLFWwindow* window, int iconified);
 void joysChangeCB(int jid, int event);
+void touchCB(GLFWwindow* window, int touch, int action, double x, double y);
 void monitorCB(GLFWmonitor* monitor, int event);
 
 bool IsThisJoystickBlacklisted(int i)
@@ -1091,6 +1100,7 @@ void psPostRWinit(void)
 	glfwSetWindowFocusCallback(PSGLOBAL(window), windowFocusCB);
 	glfwSetJoystickCallback(joysChangeCB);
 
+	glfwSetTouchCallback(PSGLOBAL(window), touchCB);
 	glfwSetMonitorCallback(monitorCB);
 
 	_InputInitialiseJoys();
@@ -2620,6 +2630,101 @@ void joysChangeCB(int jid, int event)
 			PSGLOBAL(joy1id) = -1;
 		} else if (PSGLOBAL(joy2id) == jid)
 			PSGLOBAL(joy2id) = -1;
+	}
+}
+
+static void transformTouchCoords(double &touchX, double &touchY)
+{
+     int winW, winH;
+    glfwGetWindowSize(PSGLOBAL(window), &winW, &winH);
+    
+    const double gameW = RsGlobal.maximumWidth;
+    const double gameH = RsGlobal.maximumHeight;
+    
+#ifdef OFFSCREEN_RENDER
+    switch (OffscreenRenderer::GetRotation())
+    {
+    case OffscreenRenderer::ROTATE_90:
+        std::swap(touchX, touchY);
+        std::swap(winW, winH);
+        touchY = winH - touchY;
+        break;
+        
+    case OffscreenRenderer::ROTATE_180:
+        touchX = winW - touchX;
+        touchY = winH - touchY;
+        break;
+        
+    case OffscreenRenderer::ROTATE_270:
+        std::swap(touchX, touchY);
+        std::swap(winW, winH);
+        touchX = winW - touchX;
+        break;
+        
+    default:  // ROTATE_0
+        break;
+    }
+#endif
+    
+    // Scale to game coordinates
+    touchX = touchX * gameW / winW;
+    touchY = touchY * gameH / winH;
+}
+
+void
+touchCB(GLFWwindow* window, int touchIndex, int action, double x, double y)
+{
+	// touch: index (0-9)
+	// action: GLFW_PRESS / GLFW_RELEASE / GLFW_REPEAT
+	// x, y: touch coordinates
+	transformTouchCoords(x, y);
+
+	if (action == GLFW_PRESS)
+	{
+		if (PSGLOBAL(touchMouse).activeIndex == -1)
+		{
+			PSGLOBAL(touchMouse).activeIndex = touchIndex;
+			PSGLOBAL(touchMouse).pressed = false;  // on touch down not press, press it in next frame
+			PSGLOBAL(touchMouse).justTouched = true; 
+			PSGLOBAL(touchMouse).x = x;
+			PSGLOBAL(touchMouse).y = y;
+			PSGLOBAL(touchMouse).hasPrev = false;
+			
+			if (FrontEndMenuManager.m_bMenuActive)
+			{
+				int winw, winh;
+				glfwGetWindowSize(PSGLOBAL(window), &winw, &winh);
+				FrontEndMenuManager.m_nMouseTempPosX = x * (RsGlobal.maximumWidth / (double)winw);
+				FrontEndMenuManager.m_nMouseTempPosY = y * (RsGlobal.maximumHeight / (double)winh);
+			}
+		}
+	}
+	else if (action == GLFW_RELEASE)
+	{
+		if (touchIndex == PSGLOBAL(touchMouse).activeIndex)
+		{
+			PSGLOBAL(touchMouse).pressed = false;
+			PSGLOBAL(touchMouse).justTouched = false;
+			PSGLOBAL(touchMouse).activeIndex = -1;
+			PSGLOBAL(touchMouse).hasPrev = false;
+		}
+	}
+	else if (action == GLFW_REPEAT)  // motion
+	{
+		if (touchIndex == PSGLOBAL(touchMouse).activeIndex)
+		{
+			PSGLOBAL(touchMouse).x = x;
+			PSGLOBAL(touchMouse).y = y;
+			
+			// Update menu cursor
+			if (FrontEndMenuManager.m_bMenuActive)
+			{
+				int winw, winh;
+				glfwGetWindowSize(PSGLOBAL(window), &winw, &winh);
+				FrontEndMenuManager.m_nMouseTempPosX = x * (RsGlobal.maximumWidth / (double)winw);
+				FrontEndMenuManager.m_nMouseTempPosY = y * (RsGlobal.maximumHeight / (double)winh);
+			}
+		}
 	}
 }
 
