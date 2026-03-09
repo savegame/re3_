@@ -68,6 +68,9 @@ long _dwOperatingSystemVersion;
 #ifdef OFFSCREEN_RENDER
 #include "OffscreenRenderer.h"
 #endif
+#ifdef TOUCH_CONTROLS
+#include "TouchControls.h"
+#endif
 
 #define MAX_SUBSYSTEMS		(16)
 
@@ -2677,55 +2680,20 @@ touchCB(GLFWwindow* window, int touchIndex, int action, double x, double y)
 	// touch: index (0-9)
 	// action: GLFW_PRESS / GLFW_RELEASE / GLFW_REPEAT
 	// x, y: touch coordinates
+#ifdef TOUCH_CONTROLS
 	transformTouchCoords(x, y);
 
-	if (action == GLFW_PRESS)
+	if (TouchControls::IsActive())
 	{
-		if (PSGLOBAL(touchMouse).activeIndex == -1)
-		{
-			PSGLOBAL(touchMouse).activeIndex = touchIndex;
-			PSGLOBAL(touchMouse).pressed = false;  // on touch down not press, press it in next frame
-			PSGLOBAL(touchMouse).justTouched = true; 
-			PSGLOBAL(touchMouse).x = x;
-			PSGLOBAL(touchMouse).y = y;
-			PSGLOBAL(touchMouse).hasPrev = false;
-			
-			if (FrontEndMenuManager.m_bMenuActive)
-			{
-				int winw, winh;
-				glfwGetWindowSize(PSGLOBAL(window), &winw, &winh);
-				FrontEndMenuManager.m_nMouseTempPosX = x * (RsGlobal.maximumWidth / (double)winw);
-				FrontEndMenuManager.m_nMouseTempPosY = y * (RsGlobal.maximumHeight / (double)winh);
-			}
-		}
+		if (action == GLFW_PRESS)
+			TouchControls::HandleTouchDown(touchIndex, x, y);
+		else if (action == GLFW_RELEASE)
+			TouchControls::HandleTouchUp(touchIndex, x, y);
+		else if (action == GLFW_REPEAT)
+			TouchControls::HandleTouchMove(touchIndex, x, y);
+		return;
 	}
-	else if (action == GLFW_RELEASE)
-	{
-		if (touchIndex == PSGLOBAL(touchMouse).activeIndex)
-		{
-			PSGLOBAL(touchMouse).pressed = false;
-			PSGLOBAL(touchMouse).justTouched = false;
-			PSGLOBAL(touchMouse).activeIndex = -1;
-			PSGLOBAL(touchMouse).hasPrev = false;
-		}
-	}
-	else if (action == GLFW_REPEAT)  // motion
-	{
-		if (touchIndex == PSGLOBAL(touchMouse).activeIndex)
-		{
-			PSGLOBAL(touchMouse).x = x;
-			PSGLOBAL(touchMouse).y = y;
-			
-			// Update menu cursor
-			if (FrontEndMenuManager.m_bMenuActive)
-			{
-				int winw, winh;
-				glfwGetWindowSize(PSGLOBAL(window), &winw, &winh);
-				FrontEndMenuManager.m_nMouseTempPosX = x * (RsGlobal.maximumWidth / (double)winw);
-				FrontEndMenuManager.m_nMouseTempPosY = y * (RsGlobal.maximumHeight / (double)winh);
-			}
-		}
-	}
+#endif
 }
 
 void

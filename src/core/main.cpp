@@ -79,6 +79,10 @@
 #include "GitSHA1.h"
 #endif
 
+#ifdef TOUCH_CONTROLS
+#include "TouchControls.h"
+#endif
+
 GlobalScene Scene;
 
 uint8 work_buff[55000];
@@ -1492,6 +1496,9 @@ Render2dStuff(void)
 	COcclusion::Render();
 #endif
 
+#ifdef TOUCH_CONTROLS
+	TouchControls::Draw();
+#endif
 #ifdef DEBUGMENU
 	DebugMenuRender();
 #endif

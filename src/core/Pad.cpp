@@ -47,6 +47,10 @@
 #include "libpad.h"
 #endif
 
+#ifdef TOUCH_CONTROLS
+#include "TouchControls.h"
+#endif
+
 CPad Pads[MAX_PADS];
 #ifdef GTA_PS2
 u_long128 pad_dma_buf[scePadDmaBufferMax] __attribute__((aligned(64)));
@@ -922,6 +926,30 @@ void CPad::UpdateMouse()
 		}
 	}
 #else
+#ifdef TOUCH_CONTROLS
+	// Apply touch controls: right-side look → mouse delta, left-side stick → joy state
+	if ( IsForegroundApp() && TouchControls::IsActive())
+	{
+		float touchLookDX = 0.0f, touchLookDY = 0.0f;
+		bool touchLMB = false;
+		bool touchConsumed = false;
+		TouchControls::ApplyToMouse(touchLookDX, touchLookDY, touchLMB, touchConsumed);
+
+		if (touchConsumed) {
+			PCTempMouseControllerState.Clear();
+			if (FrontEndMenuManager.m_bMenuActive) {
+				PCTempMouseControllerState.LMB = touchLMB;
+			} else {
+				PCTempMouseControllerState.x = touchLookDX;
+				PCTempMouseControllerState.y = touchLookDY;
+			}
+			OldMouseControllerState = NewMouseControllerState;
+			NewMouseControllerState = PCTempMouseControllerState;
+
+			return;
+		}
+	}
+#endif
 	if ( IsForegroundApp() && PSGLOBAL(cursorIsInWindow) )
 	{
 		double xpos = 1.0f, ypos;
@@ -942,60 +970,22 @@ void CPad::UpdateMouse()
 
 		PCTempMouseControllerState.Clear();
 
-		float touchDeltaX, touchDeltaY;
-		bool touchLMB;
-		
-		// Touch input takes priority over mouse
-		if (PSGLOBAL(touchMouse).activeIndex != -1)
-		{
-			// Обновляем позицию для меню В UpdateMouse тоже
-			if (FrontEndMenuManager.m_bMenuActive)
-			{
-				int winw, winh;
-				glfwGetWindowSize(PSGLOBAL(window), &winw, &winh);
-				FrontEndMenuManager.m_nMouseTempPosX = PSGLOBAL(touchMouse).x * (RsGlobal.maximumWidth / (double)winw);
-				FrontEndMenuManager.m_nMouseTempPosY = PSGLOBAL(touchMouse).y * (RsGlobal.maximumHeight / (double)winh);
-			}
-			
-			// Delta
-			if (PSGLOBAL(touchMouse).hasPrev)
-			{
-				PCTempMouseControllerState.x = (float)(signX * (PSGLOBAL(touchMouse).x - PSGLOBAL(touchMouse).prevX));
-				PCTempMouseControllerState.y = (float)(signY * (PSGLOBAL(touchMouse).y - PSGLOBAL(touchMouse).prevY));
-			}
-			
-			// if justTouched - its first mouse update
-			if (PSGLOBAL(touchMouse).justTouched)
-			{
-				PSGLOBAL(touchMouse).justTouched = false;
-				PSGLOBAL(touchMouse).pressed = true; // now it pressed
-			}
-			
-			PCTempMouseControllerState.LMB = PSGLOBAL(touchMouse).pressed;
-			
-			PSGLOBAL(touchMouse).prevX = PSGLOBAL(touchMouse).x;
-			PSGLOBAL(touchMouse).prevY = PSGLOBAL(touchMouse).y;
-			PSGLOBAL(touchMouse).hasPrev = true;
-		}
-		else
-		{
-			PCTempMouseControllerState.x = (float)(signX * (xpos - PSGLOBAL(lastMousePos.x)));
-			PCTempMouseControllerState.y = (float)(signY * (ypos - PSGLOBAL(lastMousePos.y)));
-			PCTempMouseControllerState.LMB = glfwGetMouseButton(PSGLOBAL(window), GLFW_MOUSE_BUTTON_LEFT);
-			PCTempMouseControllerState.RMB = glfwGetMouseButton(PSGLOBAL(window), GLFW_MOUSE_BUTTON_RIGHT);
-			PCTempMouseControllerState.MMB = glfwGetMouseButton(PSGLOBAL(window), GLFW_MOUSE_BUTTON_MIDDLE);
-			PCTempMouseControllerState.MXB1 = glfwGetMouseButton(PSGLOBAL(window), GLFW_MOUSE_BUTTON_4);
-			PCTempMouseControllerState.MXB2 = glfwGetMouseButton(PSGLOBAL(window), GLFW_MOUSE_BUTTON_5);
+		PCTempMouseControllerState.x = (float)(signX * (xpos - PSGLOBAL(lastMousePos.x)));
+		PCTempMouseControllerState.y = (float)(signY * (ypos - PSGLOBAL(lastMousePos.y)));
+		PCTempMouseControllerState.LMB = glfwGetMouseButton(PSGLOBAL(window), GLFW_MOUSE_BUTTON_LEFT);
+		PCTempMouseControllerState.RMB = glfwGetMouseButton(PSGLOBAL(window), GLFW_MOUSE_BUTTON_RIGHT);
+		PCTempMouseControllerState.MMB = glfwGetMouseButton(PSGLOBAL(window), GLFW_MOUSE_BUTTON_MIDDLE);
+		PCTempMouseControllerState.MXB1 = glfwGetMouseButton(PSGLOBAL(window), GLFW_MOUSE_BUTTON_4);
+		PCTempMouseControllerState.MXB2 = glfwGetMouseButton(PSGLOBAL(window), GLFW_MOUSE_BUTTON_5);
 
-			if (PSGLOBAL(mouseWheel) > 0)
-				PCTempMouseControllerState.WHEELUP = 1;
-			else if (PSGLOBAL(mouseWheel) < 0)
-				PCTempMouseControllerState.WHEELDN = 1;
+		if (PSGLOBAL(mouseWheel) > 0)
+			PCTempMouseControllerState.WHEELUP = 1;
+		else if (PSGLOBAL(mouseWheel) < 0)
+			PCTempMouseControllerState.WHEELDN = 1;
 
-			PSGLOBAL(lastMousePos.x) = xpos;
-			PSGLOBAL(lastMousePos.y) = ypos;
-			PSGLOBAL(mouseWheel) = 0.0f;
-		}
+		PSGLOBAL(lastMousePos.x) = xpos;
+		PSGLOBAL(lastMousePos.y) = ypos;
+		PSGLOBAL(mouseWheel) = 0.0f;
 
 		OldMouseControllerState = NewMouseControllerState;
 		NewMouseControllerState = PCTempMouseControllerState;
@@ -1695,6 +1685,9 @@ void CPad::UpdatePads(void)
 	bool bUpdate = true;
 
 	GetPad(0)->UpdateMouse();
+#ifdef TOUCH_CONTROLS
+	TouchControls::ApplyToJoyState();
+#endif
 #ifdef XINPUT
 	GetPad(0)->AffectFromXinput(m_bMapPadOneToPadTwo ? 1 : 0);
 	GetPad(1)->AffectFromXinput(m_bMapPadOneToPadTwo ? 0 : 1);

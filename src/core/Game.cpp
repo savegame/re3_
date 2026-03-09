@@ -95,6 +95,9 @@
 #ifdef USE_TEXTURE_POOL
 #include "TexturePools.h"
 #endif
+#ifdef TOUCH_CONTROLS
+#include "TouchControls.h"
+#endif
 
 eLevelName CGame::currLevel;
 int32 CGame::currArea;
@@ -608,6 +611,9 @@ bool CGame::Initialise(const char* datFile)
 
 	DMAudio.SetStartingTrackPositions(TRUE);
 	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
+#ifdef TOUCH_CONTROLS
+	TouchControls::Init();
+#endif
 	return true;
 }
 
@@ -615,6 +621,9 @@ bool CGame::ShutDown(void)
 {
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(false);
+#endif
+#ifdef TOUCH_CONTROLS
+	TouchControls::Shutdown();
 #endif
 	CReplay::FinishPlayback();
 	CReplay::EmptyReplayBuffer();
