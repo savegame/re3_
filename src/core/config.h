@@ -5,8 +5,13 @@
 #define VANILLA_DEFINES
 #endif
 
-#if defined(AURORAOS) && !defined(OFFSCREEN_RENDER)
-#define OFFSCREEN_RENDER
+#if defined(AURORAOS) 
+#  ifndef OFFSCREEN_RENDER
+#    define OFFSCREEN_RENDER
+#  endif
+#  ifndef TOUCH_CONTROLS
+#    define TOUCH_CONTROLS
+#  endif
 #endif 
 
 enum Config {

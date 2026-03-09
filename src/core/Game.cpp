@@ -90,6 +90,9 @@
 #ifdef USE_TEXTURE_POOL
 #include "TexturePools.h"
 #endif
+#ifdef TOUCH_CONTROLS
+#include "TouchControls.h"
+#endif
 
 eLevelName CGame::currLevel;
 bool CGame::bDemoMode = true;
@@ -685,11 +688,17 @@ bool CGame::Initialise(const char* datFile)
 	CCollision::ms_collisionInMemory = currLevel;
 	for (int i = 0; i < MAX_PADS; i++)
 		CPad::GetPad(i)->Clear(true);
+#ifdef TOUCH_CONTROLS
+	TouchControls::Init();
+#endif
 	return true;
 }
 
 bool CGame::ShutDown(void)
 {
+#ifdef TOUCH_CONTROLS
+	TouchControls::Shutdown();
+#endif
 	CReplay::FinishPlayback();
 	CPlane::Shutdown();
 	CTrain::Shutdown();
