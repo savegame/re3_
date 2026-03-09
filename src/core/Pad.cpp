@@ -592,7 +592,7 @@ void CPad::UpdateMouse()
 #else
 #ifdef TOUCH_CONTROLS
 	// Apply touch controls: right-side look → mouse delta, left-side stick → joy state
-	if ( IsForegroundApp() && TouchControls::IsActive())
+	if (IsForegroundApp() && TouchControls::IsActive())
 	{
 		float touchLookDX = 0.0f, touchLookDY = 0.0f;
 		bool touchLMB = false;
@@ -609,7 +609,6 @@ void CPad::UpdateMouse()
 			}
 			OldMouseControllerState = NewMouseControllerState;
 			NewMouseControllerState = PCTempMouseControllerState;
-
 			return;
 		}
 	}
@@ -1130,6 +1129,7 @@ void CPad::UpdatePads(void)
 	GetPad(0)->UpdateMouse();
 #ifdef TOUCH_CONTROLS
 	TouchControls::ApplyToJoyState();
+	TouchControls::ApplyButtons();
 #endif
 #ifdef XINPUT
 	GetPad(0)->AffectFromXinput(m_bMapPadOneToPadTwo ? 1 : 0);

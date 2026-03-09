@@ -589,8 +589,12 @@ psInitialize(void)
 	debug("Physical memory size %u\n", systemInfo.totalram);
 	debug("Available physical memory %u\n", systemInfo.freeram);
 #endif
-  
-  TheText.Unload();
+
+	TheText.Unload();
+
+#ifdef TOUCH_CONTROLS
+	TouchControls::UpdatePhysicalScale(PSGLOBAL(window));
+#endif
 
 	return TRUE;
 }

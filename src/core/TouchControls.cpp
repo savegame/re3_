@@ -9,18 +9,22 @@
 #include "Sprite2d.h"
 #include "Font.h"
 #include "main.h"
+#include "CutsceneMgr.h"
 
 #include <math.h>
 
 // Default configuration
 float TouchControls::ms_stickRadius     = 80.0f;   // game pixels
 float TouchControls::ms_stickDeadzone   = 0.15f;   // 15% deadzone
-float TouchControls::ms_lookSensitivity = 2.5f;    // mouse sensitivity multiplier
+float TouchControls::ms_lookSensitivity = 8.5f;    // mouse sensitivity multiplier
 float TouchControls::ms_stickBaseAlpha  = 80.0f;   // semi-transparent base
 float TouchControls::ms_stickThumbAlpha = 160.0f;  // more opaque thumb
 
+float TouchControls::ms_mmPerGamePixelX = 0.1f;  // fallback ~10 px/mm
+float TouchControls::ms_mmPerGamePixelY = 0.1f;
+float TouchControls::ms_pixelAspect     = 1.0f;
+
 bool TouchControls::ms_enabled     = true;
-bool TouchControls::ms_initialized = false;
 
 TouchControls::TouchPoint TouchControls::ms_touches[TOUCH_MAX_POINTS];
 TouchControls::StickVisual TouchControls::ms_stickVisual;
@@ -36,50 +40,301 @@ double TouchControls::ms_menuCursorX        = 0.0;
 double TouchControls::ms_menuCursorY        = 0.0;
 bool   TouchControls::ms_menuCursorValid    = false;
 
+TouchButton TouchControls::ms_buttons[TOUCH_MAX_BUTTONS];
+int    TouchControls::ms_numButtons    = 0;
+uint32 TouchControls::ms_currentLayout = TOUCH_LAYOUT_NONE;
+
+// ============================================================
+// Helper: add a button to the array
+// ============================================================
+
+static int AddButton(TouchButton *arr, int &count,
+                     const char *label, uint32 layout,
+                     eTouchAnchor anchor, float ox, float oy, float w, float h,
+                     eTouchActionType atype, int32 acode,
+                     uint8 r, uint8 g, uint8 b, uint8 normA, uint8 pressA,
+                     bool round, bool allowLook = false)
+{
+	if (count >= TOUCH_MAX_BUTTONS) return -1;
+	TouchButton &btn = arr[count];
+	btn.label        = label;
+	btn.layoutFlags  = layout;
+	btn.anchor       = anchor;
+	btn.offsetX      = ox;
+	btn.offsetY      = oy;
+	btn.width        = w;
+	btn.height       = h;
+	btn.actionType   = atype;
+	btn.actionCode   = acode;
+	btn.bgR = r; btn.bgG = g; btn.bgB = b;
+	btn.normalAlpha  = normA;
+	btn.pressedAlpha = pressA;
+	btn.roundVisual  = round;
+	btn.allowLook    = allowLook;
+	btn.ClearState();
+	return count++;
+}
+
+// ============================================================
+// Button definitions
+// ============================================================
+
+void
+TouchControls::SetupButtons(void)
+{
+	ms_numButtons = 0;
+
+	// ---- MENU layout ----
+	AddButton(ms_buttons, ms_numButtons,
+		"<",                                    // label
+		TOUCH_LAYOUT_MENU | TOUCH_LAYOUT_CUTSCENE, // visible in menu + cutscene
+		ANCHOR_TOP_LEFT, 15.0f, 15.0f,         // anchor, offset
+		70.0f, 45.0f,                           // size
+		TACTION_KEY, TKEY_ESC,                  // action: ESC
+		40, 40, 40, 120, 200,                   // colors
+		false);                                 // rectangle
+
+	// ---- GAMEPLAY layout ----
+
+	// Sprint / Cross (A) — bottom-right area
+	AddButton(ms_buttons, ms_numButtons,
+		"A",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_BOTTOM_RIGHT, 30.0f, 130.0f,
+		55.0f, 55.0f,
+		TACTION_PAD, TPAD_CROSS,
+		50, 120, 50, 100, 200,
+		true, true);
+
+	// Jump / Square (X) — above Cross
+	AddButton(ms_buttons, ms_numButtons,
+		"X",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_BOTTOM_RIGHT, 90.0f, 70.0f,
+		55.0f, 55.0f,
+		TACTION_PAD, TPAD_SQUARE,
+		50, 50, 180, 100, 200,
+		true, true);
+
+	// Attack / Circle (B) — left of Cross
+	AddButton(ms_buttons, ms_numButtons,
+		"B",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_BOTTOM_RIGHT, 90.0f, 190.0f,
+		55.0f, 55.0f,
+		TACTION_PAD, TPAD_CIRCLE,
+		180, 50, 50, 100, 200,
+		true, true);
+
+	// Enter-vehicle / Triangle (Y) — above the cluster
+	AddButton(ms_buttons, ms_numButtons,
+		"Y",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_BOTTOM_RIGHT, 30.0f, 250.0f,
+		55.0f, 55.0f,
+		TACTION_PAD, TPAD_TRIANGLE,
+		180, 180, 50, 100, 200,
+		true);
+
+	// L1 — top-left shoulder area
+	AddButton(ms_buttons, ms_numButtons,
+		"L1",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_TOP_LEFT, 15.0f, 15.0f,
+		60.0f, 35.0f,
+		TACTION_PAD, TPAD_L1,
+		80, 80, 80, 90, 180,
+		false);
+
+	// R1 — top-right shoulder area
+	AddButton(ms_buttons, ms_numButtons,
+		"R1",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_TOP_RIGHT, 15.0f, 15.0f,
+		60.0f, 35.0f,
+		TACTION_PAD, TPAD_R1,
+		80, 80, 80, 90, 180,
+		false, true);
+}
+
+// ============================================================
+// Layout detection
+// ============================================================
+
+uint32
+TouchControls::DetectLayout(void)
+{
+	if (FrontEndMenuManager.m_bMenuActive)
+		return TOUCH_LAYOUT_MENU;
+
+	if (CCutsceneMgr::IsRunning())
+		return TOUCH_LAYOUT_CUTSCENE;
+
+	return TOUCH_LAYOUT_GAMEPLAY;
+}
+
+void
+TouchControls::UpdateLayout(void)
+{
+	uint32 newLayout = DetectLayout();
+
+	// On layout change, clear all button states
+	if (newLayout != ms_currentLayout) {
+		for (int i = 0; i < ms_numButtons; i++)
+			ms_buttons[i].ClearState();
+		ms_currentLayout = newLayout;
+	}
+
+	// Recompute screen positions for active buttons
+	for (int i = 0; i < ms_numButtons; i++) {
+		TouchButton &btn = ms_buttons[i];
+		if (!(btn.layoutFlags & ms_currentLayout))
+			continue;
+
+		float sw = SCREEN_SCALE_X(btn.width);
+		float sh = SCREEN_SCALE_Y(btn.height);
+		float ox = SCREEN_SCALE_X(btn.offsetX);
+		float oy = SCREEN_SCALE_Y(btn.offsetY);
+
+		switch (btn.anchor) {
+		case ANCHOR_TOP_LEFT:
+			btn.screenX = ox;
+			btn.screenY = oy;
+			break;
+		case ANCHOR_TOP_RIGHT:
+			btn.screenX = SCREEN_WIDTH - ox - sw;
+			btn.screenY = oy;
+			break;
+		case ANCHOR_BOTTOM_LEFT:
+			btn.screenX = ox;
+			btn.screenY = SCREEN_HEIGHT - oy - sh;
+			break;
+		case ANCHOR_BOTTOM_RIGHT:
+			btn.screenX = SCREEN_WIDTH - ox - sw;
+			btn.screenY = SCREEN_HEIGHT - oy - sh;
+			break;
+		case ANCHOR_TOP_CENTER:
+			btn.screenX = SCREEN_WIDTH * 0.5f - sw * 0.5f + ox;
+			btn.screenY = oy;
+			break;
+		case ANCHOR_BOTTOM_CENTER:
+			btn.screenX = SCREEN_WIDTH * 0.5f - sw * 0.5f + ox;
+			btn.screenY = SCREEN_HEIGHT - oy - sh;
+			break;
+		}
+		btn.screenW = sw;
+		btn.screenH = sh;
+	}
+}
+
+// ============================================================
+// Init / Shutdown / Reset
+// ============================================================
+
 void
 TouchControls::Init(void)
 {
 	Reset();
-	ms_initialized = true;
+	SetupButtons();
 }
 
 void
 TouchControls::Shutdown(void)
 {
 	Reset();
-	ms_initialized = false;
+	ms_numButtons = 0;
 }
 
 void
 TouchControls::Reset(void)
 {
 	for (int i = 0; i < TOUCH_MAX_POINTS; i++) {
-		ms_touches[i].active = false;
-		ms_touches[i].index  = -1;
-		ms_touches[i].zone   = ZONE_NONE;
-		ms_touches[i].hasPrev = false;
+		ms_touches[i].active   = false;
+		ms_touches[i].index    = -1;
+		ms_touches[i].buttonIdx = -1;
+		ms_touches[i].isStick  = false;
+		ms_touches[i].isLook   = false;
+		ms_touches[i].hasPrev  = false;
 	}
+	for (int i = 0; i < ms_numButtons; i++)
+		ms_buttons[i].ClearState();
+
 	ms_stickVisual.visible = false;
 	ms_lookDeltaX = 0.0f;
 	ms_lookDeltaY = 0.0f;
+
 	ms_menuLMB = false;
 	ms_menuLMBPending = false;
 	ms_menuPressConsumed = false;
 	ms_menuReleaseQueued = false;
 	ms_menuCursorValid = false;
+
+	ms_currentLayout = TOUCH_LAYOUT_NONE;
 }
 
-TouchControls::eTouchZone
-TouchControls::ClassifyZone(double x, double y)
+void
+TouchControls::UpdatePhysicalScale(GLFWwindow *window)
 {
-	// Left half of screen = stick zone, right half = look zone
-	float halfScreen = SCREEN_WIDTH * 0.5f;
-	
-	if (x < halfScreen)
-		return ZONE_LEFT_STICK;
-	else
-		return ZONE_RIGHT_LOOK;
+	if (window == nil) return;
+	fprintf(stderr, "Update physical size: \n");
+
+	// Get physical monitor size in mm
+	GLFWmonitor *monitor = glfwGetWindowMonitor(window);
+	if (monitor == nil)
+		monitor = glfwGetPrimaryMonitor();
+	if (monitor == nil) return;
+
+	int physWidthMM, physHeightMM;
+	glfwGetMonitorPhysicalSize(monitor, &physWidthMM, &physHeightMM);
+	if (physWidthMM <= 0 || physHeightMM <= 0) return;
+
+	// Get window size in screen coords (what touch coords map to before transform)
+	int winW, winH;
+	glfwGetWindowSize(window, &winW, &winH);
+	if (winW <= 0 || winH <= 0) return;
+
+	// Game coordinate space
+	float gameW = (float)RsGlobal.maximumWidth;
+	float gameH = (float)RsGlobal.maximumHeight;
+	if (gameW <= 0.0f || gameH <= 0.0f) return;
+
+	// Physical mm per window pixel
+	float mmPerWinPixX = (float)physWidthMM / (float)winW;
+	float mmPerWinPixY = (float)physHeightMM / (float)winH;
+
+	// Window pixels per game pixel
+	float winPixPerGameX = (float)winW / gameW;
+	float winPixPerGameY = (float)winH / gameH;
+
+#ifdef OFFSCREEN_RENDER
+	// With rotation, physical axes swap relative to game axes
+	if (OffscreenRenderer::IsSideways()) {
+		// Game X → physical Y, Game Y → physical X
+		// Also: transformTouchCoords swaps the window coords,
+		// so after transform, game pixels map to the swapped physical axis
+		float temp = mmPerWinPixX;
+		mmPerWinPixX = mmPerWinPixY;
+		mmPerWinPixY = temp;
+
+		winPixPerGameX = (float)winH / gameW;
+		winPixPerGameY = (float)winW / gameH;
+	}
+#endif
+
+	// mm per game pixel (for delta normalization)
+	ms_mmPerGamePixelX = mmPerWinPixX * winPixPerGameX;
+	ms_mmPerGamePixelY = mmPerWinPixY * winPixPerGameY;
+
+	// Pixel aspect: ratio of physical pixel scales
+	// Used to correct circles: if >1, Y pixels are "taller" than X pixels
+	ms_pixelAspect = (SCREEN_SCALE_X(1.0f) > 0.0001f)
+		? SCREEN_SCALE_Y(1.0f) / SCREEN_SCALE_X(1.0f)
+		: 1.0f;
 }
+
+// ============================================================
+// Touch slot helpers
+// ============================================================
 
 TouchControls::TouchPoint*
 TouchControls::FindTouchByIndex(int touchIndex)
@@ -101,31 +356,90 @@ TouchControls::FindFreeTouchSlot(void)
 	return nil;
 }
 
-TouchControls::TouchPoint*
-TouchControls::FindTouchByZone(eTouchZone zone)
+// ============================================================
+// Hit testing
+// ============================================================
+
+int
+TouchControls::HitTestButton(double x, double y)
 {
-	for (int i = 0; i < TOUCH_MAX_POINTS; i++) {
-		if (ms_touches[i].active && ms_touches[i].zone == zone)
-			return &ms_touches[i];
+	for (int i = 0; i < ms_numButtons; i++) {
+		TouchButton &btn = ms_buttons[i];
+		if (!(btn.layoutFlags & ms_currentLayout))
+			continue;
+
+		if (btn.roundVisual) {
+			// Circle hit test
+			float cx = btn.screenX + btn.screenW * 0.5f;
+			float cy = btn.screenY + btn.screenH * 0.5f;
+			float r  = btn.screenW * 0.5f;
+			float dx = (float)x - cx;
+			float dy = (float)y - cy;
+			// Generous hit area — 120% of visual radius
+			if (dx * dx + dy * dy <= r * r * 1.44f)
+				return i;
+		} else {
+			// Rect hit test with small padding
+			float pad = SCREEN_SCALE_X(8.0f);
+			if (x >= btn.screenX - pad && x <= btn.screenX + btn.screenW + pad &&
+			    y >= btn.screenY - pad && y <= btn.screenY + btn.screenH + pad)
+				return i;
+		}
 	}
-	return nil;
+	return -1;
 }
+
+bool
+TouchControls::IsLeftStickZone(double x, double y)
+{
+	return x < SCREEN_WIDTH * 0.5f;
+}
+
+bool
+TouchControls::IsRightLookZone(double x, double y)
+{
+	return x >= SCREEN_WIDTH * 0.5f;
+}
+
+// ============================================================
+// Touch handlers
+// ============================================================
 
 void
 TouchControls::HandleTouchDown(int touchIndex, double x, double y)
 {
-	// fprintf(stderr, "[TOUCH DIAG] HandleTouchDown idx=%d x=%.0f y=%.0f menu=%d\n",
-	// 	touchIndex, x, y, FrontEndMenuManager.m_bMenuActive);
+	if (!ms_enabled) return;
+	UpdateLayout();
 
-	if (!ms_enabled)
-		return;
+	// --- Menu: handle as mouse ---
+	if (ms_currentLayout == TOUCH_LAYOUT_MENU) {
+		// Check buttons first (back button)
+		int btnIdx = HitTestButton(x, y);
+		if (btnIdx >= 0) {
+			TouchButton &btn = ms_buttons[btnIdx];
+			btn.pressed = true;
+			btn.pending = true;
+			btn.active = false;
+			btn.consumed = false;
+			btn.releaseQueued = false;
+			btn.touchIndex = touchIndex;
+			// Track in touch array so we can match release
+			TouchPoint *tp = FindFreeTouchSlot();
+			if (tp) {
+				tp->active = true;
+				tp->index = touchIndex;
+				tp->x = x; tp->y = y;
+				tp->buttonIdx = btnIdx;
+				tp->isStick = false;
+				tp->isLook = false;
+			}
+			return;
+		}
 
-	// Menu mode: latch LMB and set cursor position
-	if (FrontEndMenuManager.m_bMenuActive) {
+		// Otherwise: menu tap → mouse LMB
 		ms_menuCursorX = x;
 		ms_menuCursorY = y;
 		ms_menuCursorValid = true;
-		// Don't set LMB immediately — delay by 1 frame so cursor moves first
 		ms_menuLMBPending = true;
 		ms_menuLMB = false;
 		ms_menuPressConsumed = false;
@@ -133,87 +447,170 @@ TouchControls::HandleTouchDown(int touchIndex, double x, double y)
 
 		FrontEndMenuManager.m_nMouseTempPosX = (int32)x;
 		FrontEndMenuManager.m_nMouseTempPosY = (int32)y;
+
+		// Track this touch
+		TouchPoint *tp = FindFreeTouchSlot();
+		if (tp) {
+			tp->active = true;
+			tp->index = touchIndex;
+			tp->x = x; tp->y = y;
+			tp->buttonIdx = -1;
+			tp->isStick = false;
+			tp->isLook = false;
+		}
 		return;
 	}
 
-	// Gameplay mode: allocate touch slot
-	TouchPoint *tp = FindFreeTouchSlot();
-	if (tp == nil)
+	// --- Cutscene: only buttons ---
+	if (ms_currentLayout == TOUCH_LAYOUT_CUTSCENE) {
+		int btnIdx = HitTestButton(x, y);
+		if (btnIdx >= 0) {
+			TouchButton &btn = ms_buttons[btnIdx];
+			btn.pressed = true;
+			btn.pending = true;
+			btn.active = false;
+			btn.consumed = false;
+			btn.releaseQueued = false;
+			btn.touchIndex = touchIndex;
+			TouchPoint *tp = FindFreeTouchSlot();
+			if (tp) {
+				tp->active = true;
+				tp->index = touchIndex;
+				tp->x = x; tp->y = y;
+				tp->buttonIdx = btnIdx;
+				tp->isStick = false;
+				tp->isLook = false;
+			}
+		}
 		return;
-
-	eTouchZone zone = ClassifyZone(x, y);
-
-	// Only one touch per zone
-	if (FindTouchByZone(zone) != nil) {
-		if (zone == ZONE_LEFT_STICK)
-			return;
 	}
 
-	tp->active = true;
-	tp->index  = touchIndex;
-	tp->x      = x;
-	tp->y      = y;
-	tp->startX = x;
-	tp->startY = y;
-	tp->prevX  = x;
-	tp->prevY  = y;
-	tp->hasPrev = false;
-	tp->zone   = zone;
+	// --- Gameplay ---
 
-	if (zone == ZONE_LEFT_STICK) {
-		ms_stickVisual.visible = true;
-		ms_stickVisual.baseX   = (float)x;
-		ms_stickVisual.baseY   = (float)y;
-		ms_stickVisual.thumbX  = (float)x;
-		ms_stickVisual.thumbY  = (float)y;
-		ms_stickVisual.radius  = ms_stickRadius;
+	// 1. Check buttons first
+	int btnIdx = HitTestButton(x, y);
+	if (btnIdx >= 0) {
+		TouchButton &btn = ms_buttons[btnIdx];
+		btn.pressed = true;
+		btn.pending = true;
+		btn.active = false;
+		btn.consumed = false;
+		btn.releaseQueued = false;
+		btn.touchIndex = touchIndex;
+		TouchPoint *tp = FindFreeTouchSlot();
+		if (tp) {
+			tp->active = true;
+			tp->index = touchIndex;
+			tp->x = x; tp->y = y;
+			tp->prevX = x; tp->prevY = y;
+			tp->hasPrev = false;
+			tp->buttonIdx = btnIdx;
+			tp->isStick = false;
+			tp->isLook = btn.allowLook;
+		}
+		return;
+	}
+
+	// 2. Left stick zone (no active stick yet)
+	bool hasStick = false;
+	for (int i = 0; i < TOUCH_MAX_POINTS; i++)
+		if (ms_touches[i].active && ms_touches[i].isStick) { hasStick = true; break; }
+
+	if (!hasStick && IsLeftStickZone(x, y)) {
+		TouchPoint *tp = FindFreeTouchSlot();
+		if (tp) {
+			tp->active = true;
+			tp->index  = touchIndex;
+			tp->x = tp->startX = x;
+			tp->y = tp->startY = y;
+			tp->prevX = x; tp->prevY = y;
+			tp->hasPrev = false;
+			tp->buttonIdx = -1;
+			tp->isStick = true;
+			tp->isLook = false;
+
+			ms_stickVisual.visible = true;
+			ms_stickVisual.baseX   = (float)x;
+			ms_stickVisual.baseY   = (float)y;
+			ms_stickVisual.thumbX  = (float)x;
+			ms_stickVisual.thumbY  = (float)y;
+			ms_stickVisual.radius  = ms_stickRadius;
+		}
+		return;
+	}
+
+	// 3. Right look zone
+	bool hasLook = false;
+	for (int i = 0; i < TOUCH_MAX_POINTS; i++)
+		if (ms_touches[i].active && ms_touches[i].isLook) { hasLook = true; break; }
+
+	if (!hasLook && IsRightLookZone(x, y)) {
+		TouchPoint *tp = FindFreeTouchSlot();
+		if (tp) {
+			tp->active = true;
+			tp->index  = touchIndex;
+			tp->x = x; tp->y = y;
+			tp->prevX = x; tp->prevY = y;
+			tp->hasPrev = false;
+			tp->buttonIdx = -1;
+			tp->isStick = false;
+			tp->isLook = true;
+		}
+		return;
 	}
 }
 
 void
 TouchControls::HandleTouchMove(int touchIndex, double x, double y)
 {
-	if (!ms_enabled)
-		return;
+	if (!ms_enabled) return;
 
-	// Menu mode: just update cursor
-	if (FrontEndMenuManager.m_bMenuActive) {
+	TouchPoint *tp = FindTouchByIndex(touchIndex);
+	if (tp == nil) return;
+
+	tp->prevX = tp->x;
+	tp->prevY = tp->y;
+	tp->x = x;
+	tp->y = y;
+
+	// Menu: update cursor
+	if (ms_currentLayout == TOUCH_LAYOUT_MENU && tp->buttonIdx < 0) {
 		ms_menuCursorX = x;
 		ms_menuCursorY = y;
 		ms_menuCursorValid = true;
 		FrontEndMenuManager.m_nMouseTempPosX = (int32)x;
 		FrontEndMenuManager.m_nMouseTempPosY = (int32)y;
+		tp->hasPrev = true;
 		return;
 	}
 
-	// Gameplay mode
-	TouchPoint *tp = FindTouchByIndex(touchIndex);
-	if (tp == nil)
+	// Button touches: only allow look-through, no other movement
+	if (tp->buttonIdx >= 0) {
+		if (tp->isLook && tp->hasPrev) {
+			ms_lookDeltaX += (float)(x - tp->prevX) * ms_mmPerGamePixelX * ms_lookSensitivity;
+			ms_lookDeltaY += (float)(tp->prevY - y) * ms_mmPerGamePixelY * ms_lookSensitivity;
+		}
+		tp->hasPrev = true;
 		return;
+	}
 
-	tp->prevX = tp->x;
-	tp->prevY = tp->y;
-	tp->x     = x;
-	tp->y     = y;
-
-	if (tp->zone == ZONE_LEFT_STICK) {
+	// Left stick
+	if (tp->isStick) {
 		float dx = (float)(x - tp->startX);
 		float dy = (float)(y - tp->startY);
 		float dist = sqrtf(dx * dx + dy * dy);
-
 		if (dist > ms_stickRadius) {
 			dx = dx / dist * ms_stickRadius;
 			dy = dy / dist * ms_stickRadius;
 		}
-
 		ms_stickVisual.thumbX = ms_stickVisual.baseX + dx;
 		ms_stickVisual.thumbY = ms_stickVisual.baseY + dy;
 	}
-	else if (tp->zone == ZONE_RIGHT_LOOK) {
-		if (tp->hasPrev) {
-			ms_lookDeltaX += (float)(x - tp->prevX) * ms_lookSensitivity;
-			ms_lookDeltaY += (float)(tp->prevY - y) * ms_lookSensitivity;
-		}
+
+	// Right look
+	if (tp->isLook && tp->hasPrev) {
+		ms_lookDeltaX += (float)(x - tp->prevX) * ms_mmPerGamePixelX * ms_lookSensitivity;
+		ms_lookDeltaY += (float)(tp->prevY - y) * ms_mmPerGamePixelY * ms_lookSensitivity;
 	}
 
 	tp->hasPrev = true;
@@ -222,75 +619,86 @@ TouchControls::HandleTouchMove(int touchIndex, double x, double y)
 void
 TouchControls::HandleTouchUp(int touchIndex, double x, double y)
 {
-	if (!ms_enabled)
-		return;
+	if (!ms_enabled) return;
 
-	// Menu mode: queue release (will fire after press is consumed)
-	if (FrontEndMenuManager.m_bMenuActive) {
-		ms_menuReleaseQueued = true;
-		return;
+	TouchPoint *tp = FindTouchByIndex(touchIndex);
+	if (tp == nil) return;
+
+	// Button release
+	if (tp->buttonIdx >= 0 && tp->buttonIdx < ms_numButtons) {
+		TouchButton &btn = ms_buttons[tp->buttonIdx];
+		btn.pressed = false;
+		btn.releaseQueued = true;
+		btn.touchIndex = -1;
 	}
 
-	// Gameplay mode
-	TouchPoint *tp = FindTouchByIndex(touchIndex);
-	if (tp == nil)
-		return;
+	// Menu mouse release
+	if (ms_currentLayout == TOUCH_LAYOUT_MENU && tp->buttonIdx < 0) {
+		ms_menuReleaseQueued = true;
+	}
 
-	if (tp->zone == ZONE_LEFT_STICK)
+	// Stick release
+	if (tp->isStick)
 		ms_stickVisual.visible = false;
 
-	tp->active  = false;
-	tp->index   = -1;
-	tp->zone    = ZONE_NONE;
-	tp->hasPrev = false;
+	tp->active    = false;
+	tp->index     = -1;
+	tp->buttonIdx = -1;
+	tp->isStick   = false;
+	tp->isLook    = false;
+	tp->hasPrev   = false;
 }
+
+// ============================================================
+// Per-frame apply: joystick
+// ============================================================
 
 void
 TouchControls::ApplyToJoyState(void)
 {
-	if (!ms_enabled)
-		return;
+	if (!ms_enabled) return;
+	if (ms_currentLayout != TOUCH_LAYOUT_GAMEPLAY) return;
 
-	// Don't apply stick in menus
-	if (FrontEndMenuManager.m_bMenuActive)
-		return;
-
-	TouchPoint *stickTouch = FindTouchByZone(ZONE_LEFT_STICK);
-	if (stickTouch == nil)
-		return;
+	// Find the stick touch
+	TouchPoint *stickTouch = nil;
+	for (int i = 0; i < TOUCH_MAX_POINTS; i++) {
+		if (ms_touches[i].active && ms_touches[i].isStick) {
+			stickTouch = &ms_touches[i];
+			break;
+		}
+	}
+	if (stickTouch == nil) return;
 
 	float dx = (float)(stickTouch->x - stickTouch->startX);
 	float dy = (float)(stickTouch->y - stickTouch->startY);
 	float dist = sqrtf(dx * dx + dy * dy);
 
 	if (dist < ms_stickRadius * ms_stickDeadzone)
-		return;  // inside deadzone
+		return;
 
-	// Normalize to -1..1 range
-	float maxDist = ms_stickRadius;
-	float nx = dx / maxDist;
-	float ny = dy / maxDist;
-	
-	// Clamp
+	float nx = dx / ms_stickRadius;
+	float ny = dy / ms_stickRadius;
 	if (nx > 1.0f) nx = 1.0f;
 	if (nx < -1.0f) nx = -1.0f;
 	if (ny > 1.0f) ny = 1.0f;
 	if (ny < -1.0f) ny = -1.0f;
 
-	// Apply deadzone remapping: remap [deadzone..1] to [0..1]
 	float magnitude = sqrtf(nx * nx + ny * ny);
-	if (magnitude > 0.0f && magnitude > ms_stickDeadzone) {
+	if (magnitude > ms_stickDeadzone) {
 		float remapped = (magnitude - ms_stickDeadzone) / (1.0f - ms_stickDeadzone);
 		if (remapped > 1.0f) remapped = 1.0f;
 		nx = nx / magnitude * remapped;
 		ny = ny / magnitude * remapped;
 	}
 
-	// Write to pad - PCTempJoyState uses int16 range ±128
 	CPad *pad = CPad::GetPad(0);
 	pad->PCTempJoyState.LeftStickX = (int16)(nx * 128.0f);
 	pad->PCTempJoyState.LeftStickY = (int16)(ny * 128.0f);
 }
+
+// ============================================================
+// Per-frame apply: mouse
+// ============================================================
 
 void
 TouchControls::ApplyToMouse(float &outDeltaX, float &outDeltaY, bool &outLMB, bool &outConsumed)
@@ -298,27 +706,24 @@ TouchControls::ApplyToMouse(float &outDeltaX, float &outDeltaY, bool &outLMB, bo
 	outConsumed = false;
 	outLMB = false;
 
-	if (!ms_enabled)
-		return;
+	if (!ms_enabled) return;
 
-	// --- Menu mode ---
-	if (FrontEndMenuManager.m_bMenuActive) {
-		// Always push cursor position
+	// --- Menu mouse latch ---
+	if (ms_currentLayout == TOUCH_LAYOUT_MENU) {
 		if (ms_menuCursorValid) {
 			FrontEndMenuManager.m_nMouseTempPosX = (int32)ms_menuCursorX;
 			FrontEndMenuManager.m_nMouseTempPosY = (int32)ms_menuCursorY;
 			outConsumed = true;
 		}
 
-		// Frame 1 after press: cursor moved, now arm LMB for next frame
+		// Frame 1: move cursor only
 		if (ms_menuLMBPending) {
 			ms_menuLMBPending = false;
 			ms_menuLMB = true;
-			// outLMB stays false this frame — cursor settles first
 			return;
 		}
 
-		// Frame 2+: LMB is active
+		// Frame 2+: inject LMB
 		if (ms_menuLMB) {
 			outLMB = true;
 			outConsumed = true;
@@ -333,140 +738,219 @@ TouchControls::ApplyToMouse(float &outDeltaX, float &outDeltaY, bool &outLMB, bo
 		return;
 	}
 
-	// --- Gameplay mode ---
+	// --- Gameplay look delta ---
 	if (ms_lookDeltaX != 0.0f || ms_lookDeltaY != 0.0f) {
 		outDeltaX = ms_lookDeltaX;
 		outDeltaY = ms_lookDeltaY;
 		outConsumed = true;
-
 		ms_lookDeltaX = 0.0f;
 		ms_lookDeltaY = 0.0f;
 	}
 }
 
-// ---- Drawing ----
+// ============================================================
+// Per-frame apply: buttons (1-frame latch pattern)
+// ============================================================
 
 void
-TouchControls::DrawCircle(float cx, float cy, float radius, int segments,
-                            uint8 r, uint8 g, uint8 b, uint8 a)
+TouchControls::ApplyButtons(void)
 {
-	// Draw a circle outline using line segments via Im2D
-	// We approximate with CSprite2d::DrawRect for thin rectangles at each segment
-	// Actually, let's use a simple approach: draw small rectangles along the circumference
-	
-	float angleStep = 2.0f * 3.14159265f / (float)segments;
-	float thickness = SCREEN_SCALE_X(2.0f);
-	
-	for (int i = 0; i < segments; i++) {
-		float a0 = angleStep * i;
-		float a1 = angleStep * (i + 1);
-		
-		float x0 = cx + cosf(a0) * radius;
-		float y0 = cy + sinf(a0) * radius;
-		float x1 = cx + cosf(a1) * radius;
-		float y1 = cy + sinf(a1) * radius;
-		
-		// Draw a thin rect between the two points
-		// Approximate as a small rect
-		float midX = (x0 + x1) * 0.5f;
-		float midY = (y0 + y1) * 0.5f;
-		float halfT = thickness * 0.5f;
-		
-		CSprite2d::DrawRect(
-			CRect(Min(x0, x1) - halfT, Min(y0, y1) - halfT,
-			      Max(x0, x1) + halfT, Max(y0, y1) + halfT),
-			CRGBA(r, g, b, a));
+	if (!ms_enabled) return;
+	UpdateLayout();
+
+	for (int i = 0; i < ms_numButtons; i++) {
+		TouchButton &btn = ms_buttons[i];
+		if (!(btn.layoutFlags & ms_currentLayout))
+			continue;
+
+		// Latch step 1: pending → arm
+		if (btn.pending) {
+			btn.pending = false;
+			btn.active = true;
+			continue;  // don't inject this frame
+		}
+
+		// Latch step 2: active → inject
+		if (btn.active) {
+			switch (btn.actionType) {
+			case TACTION_KEY:  InjectKey(btn.actionCode, true); break;
+			case TACTION_PAD:  InjectPad(btn.actionCode, true); break;
+			default: break;
+			}
+			btn.consumed = true;
+
+			if (btn.releaseQueued) {
+				btn.active = false;
+				btn.releaseQueued = false;
+			}
+		}
 	}
 }
+
+// ============================================================
+// Injection helpers
+// ============================================================
+
+void
+TouchControls::InjectKey(int32 keyID, bool pressed)
+{
+	int16 val = pressed ? 1 : 0;
+	switch (keyID) {
+	case TKEY_ESC:   CPad::NewKeyState.ESC = val; break;
+	case TKEY_ENTER: CPad::NewKeyState.EXTENTER = val; break;
+	case TKEY_TAB:   CPad::NewKeyState.TAB = val; break;
+	case TKEY_SPACE: CPad::NewKeyState.VK_KEYS[' '] = val; break;
+	}
+}
+
+void
+TouchControls::InjectPad(int32 padBtn, bool pressed)
+{
+	int16 val = pressed ? 255 : 0;
+	CPad *pad = CPad::GetPad(0);
+	switch (padBtn) {
+	case TPAD_CROSS:      pad->PCTempJoyState.Cross = val; break;
+	case TPAD_SQUARE:     pad->PCTempJoyState.Square = val; break;
+	case TPAD_CIRCLE:     pad->PCTempJoyState.Circle = val; break;
+	case TPAD_TRIANGLE:   pad->PCTempJoyState.Triangle = val; break;
+	case TPAD_L1:         pad->PCTempJoyState.LeftShoulder1 = val; break;
+	case TPAD_R1:         pad->PCTempJoyState.RightShoulder1 = val; break;
+	case TPAD_L2:         pad->PCTempJoyState.LeftShoulder2 = val; break;
+	case TPAD_R2:         pad->PCTempJoyState.RightShoulder2 = val; break;
+	case TPAD_DPAD_UP:    pad->PCTempJoyState.DPadUp = val; break;
+	case TPAD_DPAD_DOWN:  pad->PCTempJoyState.DPadDown = val; break;
+	case TPAD_DPAD_LEFT:  pad->PCTempJoyState.DPadLeft = val; break;
+	case TPAD_DPAD_RIGHT: pad->PCTempJoyState.DPadRight = val; break;
+	case TPAD_START:      pad->PCTempJoyState.Start = val; break;
+	case TPAD_SELECT:     pad->PCTempJoyState.Select = val; break;
+	}
+}
+
+// ============================================================
+// Drawing
+// ============================================================
 
 void
 TouchControls::DrawFilledCircle(float cx, float cy, float radius, int segments,
                                  uint8 r, uint8 g, uint8 b, uint8 a)
 {
-	// Approximate filled circle with concentric rectangles (simple approach)
-	// or use triangle fan via Im2D
-	
-	// Simple approach: draw overlapping rects to approximate
-	// Better approach: use RwIm2D triangle fan
 	float nearZ = RwIm2DGetNearScreenZ();
 	float recipZ = 1.0f / RwCameraGetNearClipPlane(Scene.camera);
-	
-	// Triangle fan: center + (segments+1) vertices
-	int numVerts = segments + 2; // center + ring + closing
-	if (numVerts > 102) numVerts = 102; // safety cap
-	
+
+	int numVerts = segments + 2;
+	if (numVerts > 102) numVerts = 102;
+
 	RwIm2DVertex verts[102];
 	float angleStep = 2.0f * 3.14159265f / (float)segments;
-	
-	// Center vertex
+
 	RwIm2DVertexSetScreenX(&verts[0], cx);
 	RwIm2DVertexSetScreenY(&verts[0], cy);
 	RwIm2DVertexSetScreenZ(&verts[0], nearZ);
 	RwIm2DVertexSetRecipCameraZ(&verts[0], recipZ);
 	RwIm2DVertexSetIntRGBA(&verts[0], r, g, b, a);
-	
+
 	for (int i = 0; i <= segments; i++) {
 		float angle = angleStep * i;
-		float px = cx + cosf(angle) * radius;
-		float py = cy + sinf(angle) * radius;
-		
-		RwIm2DVertexSetScreenX(&verts[i + 1], px);
-		RwIm2DVertexSetScreenY(&verts[i + 1], py);
+		RwIm2DVertexSetScreenX(&verts[i + 1], cx + cosf(angle) * radius);
+		RwIm2DVertexSetScreenY(&verts[i + 1], cy + sinf(angle) * radius);
 		RwIm2DVertexSetScreenZ(&verts[i + 1], nearZ);
 		RwIm2DVertexSetRecipCameraZ(&verts[i + 1], recipZ);
 		RwIm2DVertexSetIntRGBA(&verts[i + 1], r, g, b, a);
 	}
-	
-	// Render as triangle fan
+
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
-	
+
 	RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, verts, numVerts);
-	
+
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
 }
 
 void
+TouchControls::DrawButton(TouchButton &btn)
+{
+	uint8 alpha = btn.pressed ? btn.pressedAlpha : btn.normalAlpha;
+
+	if (btn.roundVisual) {
+		float cx = btn.screenX + btn.screenW * 0.5f;
+		float cy = btn.screenY + btn.screenH * 0.5f;
+		float r  = btn.screenW * 0.5f;
+		DrawFilledCircle(cx, cy, r, 24, btn.bgR, btn.bgG, btn.bgB, alpha);
+	} else {
+		CSprite2d::DrawRect(
+			CRect(btn.screenX, btn.screenY,
+			      btn.screenX + btn.screenW, btn.screenY + btn.screenH),
+			CRGBA(btn.bgR, btn.bgG, btn.bgB, alpha));
+	}
+
+	// Draw label
+	if (btn.label && btn.label[0]) {
+		CFont::SetFontStyle(FONT_HEADING);
+		CFont::SetScale(SCREEN_SCALE_X(0.55f), SCREEN_SCALE_Y(0.9f));
+		CFont::SetColor(CRGBA(255, 255, 255, alpha));
+		CFont::SetDropShadowPosition(0);
+		CFont::SetCentreOn();
+		CFont::SetCentreSize(btn.screenW + SCREEN_SCALE_X(40.0f));
+		CFont::SetPropOn();
+		CFont::SetBackgroundOff();
+		CFont::SetWrapx(SCREEN_WIDTH);
+		CFont::SetRightJustifyOff();
+
+		// Convert label to wchar
+		wchar wlabel[8];
+		int j = 0;
+		for (const char *p = btn.label; *p && j < 7; p++, j++)
+			wlabel[j] = (wchar)*p;
+		wlabel[j] = 0;
+
+		CFont::PrintString(
+			btn.screenX + btn.screenW * 0.5f,
+			btn.screenY + btn.screenH * 0.2f,
+			wlabel);
+	}
+}
+
+void
 TouchControls::Draw(void)
 {
-	if (!ms_enabled || !ms_initialized)
+	if (!ms_enabled)
 		return;
+	UpdateLayout();
 
-	// Don't draw controls in menus
-	if (FrontEndMenuManager.m_bMenuActive)
-		return;
-
-	// Draw the left stick if it's visible (finger is touching left zone)
-	if (ms_stickVisual.visible) {
-		float baseR = ms_stickVisual.radius;
-		float thumbR = SCREEN_SCALE_X(25.0f);
-		
-		// Draw base circle (outer ring area)
-		DrawFilledCircle(
-			ms_stickVisual.baseX, ms_stickVisual.baseY,
-			baseR,
-			32,
-			255, 255, 255, (uint8)ms_stickBaseAlpha);
-		
-		// Draw thumb circle
-		DrawFilledCircle(
-			ms_stickVisual.thumbX, ms_stickVisual.thumbY,
-			thumbR,
-			24,
-			255, 255, 255, (uint8)ms_stickThumbAlpha);
+	// Draw active buttons for current layout
+	for (int i = 0; i < ms_numButtons; i++) {
+		TouchButton &btn = ms_buttons[i];
+		if (btn.layoutFlags & ms_currentLayout)
+			DrawButton(btn);
 	}
-	else {
-		// When stick is not active, draw a subtle hint on the left side
-		float hintX = SCREEN_SCALE_X(120.0f);
-		float hintY = SCREEN_HEIGHT - SCREEN_SCALE_Y(120.0f);
-		float hintR = SCREEN_SCALE_X(40.0f);
-		
-		DrawFilledCircle(hintX, hintY, hintR, 24, 255, 255, 255, 30);
+
+	// Draw left stick (gameplay only)
+	if (ms_currentLayout == TOUCH_LAYOUT_GAMEPLAY) {
+		if (ms_stickVisual.visible) {
+			float baseR  = ms_stickVisual.radius;
+			float thumbR = SCREEN_SCALE_X(25.0f);
+
+			DrawFilledCircle(
+				ms_stickVisual.baseX, ms_stickVisual.baseY,
+				baseR, 32,
+				255, 255, 255, (uint8)ms_stickBaseAlpha);
+
+			DrawFilledCircle(
+				ms_stickVisual.thumbX, ms_stickVisual.thumbY,
+				thumbR, 24,
+				255, 255, 255, (uint8)ms_stickThumbAlpha);
+		} else {
+			// Idle hint
+			float hintX = SCREEN_SCALE_X(120.0f);
+			float hintY = SCREEN_HEIGHT - SCREEN_SCALE_Y(120.0f);
+			float hintR = SCREEN_SCALE_X(40.0f);
+			DrawFilledCircle(hintX, hintY, hintR, 24, 255, 255, 255, 30);
+		}
 	}
 }
 
