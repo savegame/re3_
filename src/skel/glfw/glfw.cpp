@@ -2699,22 +2699,16 @@ touchCB(GLFWwindow* window, int touchIndex, int action, double x, double y)
 void
 monitorCB(GLFWmonitor* monitor, int event)
 {
-    if (event == GLFW_TRANSFORM_CHANGED)
-    {
-        int transform = glfwGetMonitorTransform(monitor);
-        
-        switch (transform)
-        {
-        case GLFW_TRANSFORM_NORMAL:
-        case GLFW_TRANSFORM_270:
-            OffscreenRenderer::SetRotation(OffscreenRenderer::ROTATE_90);
-            break;
-        case GLFW_TRANSFORM_180:
-        case GLFW_TRANSFORM_90:
-            OffscreenRenderer::SetRotation(OffscreenRenderer::ROTATE_270);
-            break;
-        }
-    }
+	if (event == GLFW_TRANSFORM_CHANGED)
+	{
+#ifdef OFFSCREEN_RENDER
+		int transform = glfwGetMonitorTransform(monitor);
+		OffscreenRenderer::UpdateRotation(transform);
+#endif
+#ifdef TOUCH_CONTROLS
+		TouchControls::UpdatePhysicalScale(PSGLOBAL(window));
+#endif
+	}
 }
 
 #if (defined(_MSC_VER))
