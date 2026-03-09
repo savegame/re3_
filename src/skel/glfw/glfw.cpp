@@ -601,8 +601,12 @@ psInitialize(void)
 #endif
 	_dwOperatingSystemVersion = OS_WINXP; // To fool other classes
 #endif
-  
-  TheText.Unload();
+
+	TheText.Unload();
+
+#ifdef TOUCH_CONTROLS
+	TouchControls::UpdatePhysicalScale(PSGLOBAL(window));
+#endif
 
 	return TRUE;
 }
