@@ -56,6 +56,7 @@ public:
     static void SetRotation(int degrees);  // Convenience: accepts 0, 90, 180, 270
     static Rotation GetRotation(void) { return ms_rotation; }
     static int GetRotationDegrees(void) { return (int)ms_rotation; }
+    static void UpdateRotation(int monitorTransform);
     
     // Flip rotation by 180 degrees (90<->270 or 0<->180)
     // This is ALWAYS instant - no buffer resize needed

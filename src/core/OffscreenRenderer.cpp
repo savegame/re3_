@@ -380,6 +380,22 @@ OffscreenRenderer::SetRotation(int degrees)
 }
 
 void
+OffscreenRenderer::UpdateRotation(int transform)
+{
+    switch (transform)
+    {
+    case GLFW_TRANSFORM_NORMAL:
+    case GLFW_TRANSFORM_270:
+        OffscreenRenderer::SetRotation(OffscreenRenderer::ROTATE_90);
+        break;
+    case GLFW_TRANSFORM_180:
+    case GLFW_TRANSFORM_90:
+        OffscreenRenderer::SetRotation(OffscreenRenderer::ROTATE_270);
+        break;
+    }
+}
+
+void
 OffscreenRenderer::FlipRotation(void)
 {
     // Add 180 degrees: 0<->180, 90<->270
