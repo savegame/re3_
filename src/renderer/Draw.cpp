@@ -34,6 +34,9 @@ bool CDraw::ms_bFixSprites = true;
 float
 FindAspectRatio(void)
 {
+#ifdef OFSCREEN_RENDER
+	return OffscreenRender::GetAspectRatio();
+#endif
 	switch (FrontEndMenuManager.m_PrefsUseWideScreen) {
 	case AR_AUTO:
 		return SCREEN_WIDTH / SCREEN_HEIGHT;

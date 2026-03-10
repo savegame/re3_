@@ -9,6 +9,9 @@
 #if !defined(FINAL) || defined(DEBUGMENU)
 #include "rtcharse.h"
 #endif
+#ifdef OFFSCREEN_RENDER
+#include "OffscreenRenderer.h"
+#endif
 #ifndef FINAL
 RtCharset *debugCharset;
 bool bDebugRenderGroups;
@@ -491,10 +494,14 @@ CameraSize(RwCamera * camera, RwRect * rect,
 				/* For full screen applications, resizing the camera just doesn't
 				 * make sense, use the video mode size.
 				 */
-
 				r.x = r.y = 0;
+#ifdef OFFSCREEN_RENDER
+				r.w = OffscreenRenderer::GetRenderWidth();
+				r.h = OffscreenRenderer::GetRenderHeight();
+#else
 				r.w = videoMode.width;
 				r.h = videoMode.height;
+#endif
 				rect = &r;
 			}
 			else
