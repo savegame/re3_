@@ -224,22 +224,20 @@ CGame::InitialiseRenderWare(void)
 	RwCameraSetFarClipPlane(Scene.camera, 2000.0f);	// 250.0f on PS2 but who cares
 	RwCameraSetNearClipPlane(Scene.camera, 0.9f);
 	
-	CameraSize(Scene.camera, nil, DEFAULT_VIEWWINDOW, DEFAULT_ASPECT_RATIO);
-	
 #ifdef OFFSCREEN_RENDER
-	// Initialize offscreen rendering
-	// Use same resolution as screen, or lower for performance
-	int w = SCREEN_WIDTH;
-	int h = SCREEN_HEIGHT;
-
-	if (w < h) {
-		OffscreenRenderer::SetRotation(OffscreenRenderer::ROTATE_90);
-	}
-
-	if (!OffscreenRenderer::Init(w, h)) {
+	if (!OffscreenRenderer::Init()) {
 		debug("Warning: Offscreen rendering failed to initialize\n");
 	}
+	RwRect r;
+	r.x = 0; 
+	r.y = 0;
+	r.w = OffscreenRenderer::GetRenderWidth();
+	r.h = OffscreenRenderer::GetRenderHeight();
+	CameraSize(Scene.camera, &r, DEFAULT_VIEWWINDOW, OffscreenRenderer::GetAspectRatio());
+#else
+	CameraSize(Scene.camera, nil, DEFAULT_VIEWWINDOW, DEFAULT_ASPECT_RATIO);
 #endif
+
 
 	/* Create a world */
 	RwBBox  bbox;

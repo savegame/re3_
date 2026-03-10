@@ -33,6 +33,9 @@ bool CDraw::ms_bFixSprites = true;
 float
 CDraw::FindAspectRatio(void)
 {
+#ifdef OFSCREEN_RENDER
+	return OffscreenRender::GetAspectRatio();
+#endif
 #ifndef ASPECT_RATIO_SCALE
 	if(FrontEndMenuManager.m_PrefsUseWideScreen)	
 		return 16.0f/9.0f;

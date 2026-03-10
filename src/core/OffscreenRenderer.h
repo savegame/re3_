@@ -31,9 +31,10 @@ public:
     };
 
     // Initialize offscreen rendering system
-    // Call after CGame::InitialiseRenderWare()
-    // renderWidth/Height: resolution to render at (can differ from screen)
-    static bool Init(int renderWidth, int renderHeight);
+    // Call after Scene.camera is created in CGame::InitialiseRenderWare()
+    // Automatically detects window size and orientation from GLFW
+    // Sets RsGlobal to logical (landscape) dimensions
+    static bool Init();
     
     // Shutdown and free resources
     static void Shutdown(void);
@@ -82,11 +83,19 @@ public:
     // Get render dimensions
     static int GetRenderWidth(void) { return ms_renderWidth; }
     static int GetRenderHeight(void) { return ms_renderHeight; }
+
+    // Get actual aspect ration
+    static int GetAspectRatio(void) { return ms_renderAspect; }
+
+    // Get actual window dimensions (before rotation)
+    static int GetWindowWidth(void) { return ms_windowWidth; }
+    static int GetWindowHeight(void) { return ms_windowHeight; }
     
     // Transform screen coordinates for input (mouse/touch)
     // Takes screen coords, returns game coords accounting for rotation
-    static void TransformInputCoords(float screenX, float screenY, 
+    static void TransformInputCoords(float windowX, float windowY, 
                                      float *gameX, float *gameY);
+    static void TransformInputCoords(double *windowX, double *windowY);
 
 private:
     static bool CreateOffscreenBuffers(int width, int height);
@@ -106,10 +115,13 @@ private:
     static bool ms_initialized;
     static bool ms_enabled;
     static bool ms_inFrame;                 // Currently rendering to offscreen
-    
+
     // Render parameters
-    static int ms_renderWidth;
+    static int ms_renderWidth;      // logical render size (landscape)
     static int ms_renderHeight;
+    static int ms_windowWidth;      // actual window size in pixels
+    static int ms_windowHeight;
+    static float ms_renderAspect;
     static float ms_renderScale;
     static Rotation ms_rotation;
 };

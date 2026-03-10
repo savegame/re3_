@@ -2607,44 +2607,6 @@ void joysChangeCB(int jid, int event)
 	}
 }
 
-static void transformTouchCoords(double &touchX, double &touchY)
-{
-     int winW, winH;
-    glfwGetWindowSize(PSGLOBAL(window), &winW, &winH);
-    
-    const double gameW = RsGlobal.maximumWidth;
-    const double gameH = RsGlobal.maximumHeight;
-    
-#ifdef OFFSCREEN_RENDER
-    switch (OffscreenRenderer::GetRotation())
-    {
-    case OffscreenRenderer::ROTATE_90:
-        std::swap(touchX, touchY);
-        std::swap(winW, winH);
-        touchY = winH - touchY;
-        break;
-        
-    case OffscreenRenderer::ROTATE_180:
-        touchX = winW - touchX;
-        touchY = winH - touchY;
-        break;
-        
-    case OffscreenRenderer::ROTATE_270:
-        std::swap(touchX, touchY);
-        std::swap(winW, winH);
-        touchX = winW - touchX;
-        break;
-        
-    default:  // ROTATE_0
-        break;
-    }
-#endif
-    
-    // Scale to game coordinates
-    touchX = touchX * gameW / winW;
-    touchY = touchY * gameH / winH;
-}
-
 void
 touchCB(GLFWwindow* window, int touchIndex, int action, double x, double y)
 {
@@ -2652,7 +2614,9 @@ touchCB(GLFWwindow* window, int touchIndex, int action, double x, double y)
 	// action: GLFW_PRESS / GLFW_RELEASE / GLFW_REPEAT
 	// x, y: touch coordinates
 #ifdef TOUCH_CONTROLS
-	transformTouchCoords(x, y);
+#ifdef OFFSCREEN_RENDER
+	OffscreenRenderer::TransformInputCoords(&x, &y);
+#endif
 
 	if (TouchControls::IsActive())
 	{

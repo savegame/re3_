@@ -25,6 +25,9 @@ bool OffscreenRenderer::ms_inFrame = false;
 
 int OffscreenRenderer::ms_renderWidth = 0;
 int OffscreenRenderer::ms_renderHeight = 0;
+int OffscreenRenderer::ms_windowWidth = 0;
+int OffscreenRenderer::ms_windowHeight = 0;
+float OffscreenRenderer::ms_renderAspect = 16.0f/9.0f;
 float OffscreenRenderer::ms_renderScale = 1.0f;
 OffscreenRenderer::Rotation OffscreenRenderer::ms_rotation = ROTATE_0;
 
@@ -33,7 +36,7 @@ static RwIm2DVertex blitVerts[4];
 static RwImVertexIndex blitIndices[6] = { 0, 1, 2, 0, 2, 3 };
 
 bool
-OffscreenRenderer::Init(int renderWidth, int renderHeight)
+OffscreenRenderer::Init()
 {
     if (ms_initialized) {
         debug("OffscreenRenderer already initialized\n");
@@ -45,18 +48,56 @@ OffscreenRenderer::Init(int renderWidth, int renderHeight)
         return false;
     }
     
-    ms_renderWidth = renderWidth;
-    ms_renderHeight = renderHeight;
+    // Get actual window size from GLFW
+    GLFWwindow* window = glfwGetCurrentContext();
+    if (window == nil) {
+        debug("OffscreenRenderer::Init - No GLFW context!\n");
+        return false;
+    }
     
-    if (!CreateOffscreenBuffers(renderWidth, renderHeight)) {
+    int winW, winH;
+    glfwGetFramebufferSize(window, &winW, &winH);
+    
+    ms_windowWidth = winW;
+    ms_windowHeight = winH;
+    
+    // Determine orientation and set render dimensions
+    if (winW < winH) {
+        // Portrait window -> render in landscape with 90 degree rotation
+        ms_rotation = ROTATE_90;
+        ms_renderWidth = winH;   // swap dimensions for landscape FBO
+        ms_renderHeight = winW;
+        debug("Portrait window %dx%d -> landscape render %dx%d (rotation 90)\n",
+              winW, winH, ms_renderWidth, ms_renderHeight);
+    } else {
+        // Landscape window -> no rotation needed
+        ms_rotation = ROTATE_0;
+        ms_renderWidth = winW;
+        ms_renderHeight = winH;
+        debug("Landscape window %dx%d -> no rotation\n", winW, winH);
+    }
+    
+    ms_renderAspect = (float)ms_renderWidth / (float)ms_renderHeight;
+
+    // Create offscreen FBO with logical (landscape) dimensions
+    if (!CreateOffscreenBuffers(ms_renderWidth, ms_renderHeight)) {
         debug("OffscreenRenderer::Init - Failed to create buffers\n");
         return false;
     }
     
+    // Set RsGlobal to logical dimensions - this makes the game think
+    // it's running in landscape mode regardless of actual window orientation
+    RsGlobal.width = ms_renderWidth;
+    RsGlobal.height = ms_renderHeight;
+    RsGlobal.maximumWidth = ms_renderWidth;
+    RsGlobal.maximumHeight = ms_renderHeight;
+    
     ms_initialized = true;
     ms_enabled = true;
 
-    debug("OffscreenRenderer initialized: %dx%d\n", renderWidth, renderHeight);
+    debug("OffscreenRenderer initialized: FBO %dx%d, RsGlobal set to %dx%d\n",
+          ms_renderWidth, ms_renderHeight,
+          RsGlobal.maximumWidth, RsGlobal.maximumHeight);
     return true;
 }
 
@@ -434,45 +475,68 @@ OffscreenRenderer::SetEnabled(bool enabled)
 }
 
 void
-OffscreenRenderer::TransformInputCoords(float screenX, float screenY,
+OffscreenRenderer::TransformInputCoords(float windowX, float windowY,
                                         float *gameX, float *gameY)
 {
     if (!ms_initialized || !ms_enabled) {
-        *gameX = screenX;
-        *gameY = screenY;
+        *gameX = windowX;
+        *gameY = windowY;
         return;
     }
     
-    float sw = (float)SCREEN_WIDTH;
-    float sh = (float)SCREEN_HEIGHT;
+    // Window dimensions (actual pixels on screen)
+    float winW = (float)ms_windowWidth;
+    float winH = (float)ms_windowHeight;
     
-    // Normalize to 0-1
-    float nx = screenX / sw;
-    float ny = screenY / sh;
+    // Game dimensions (logical render size)
+    float gameW = (float)ms_renderWidth;
+    float gameH = (float)ms_renderHeight;
     
     // Transform based on rotation
+    // Input is in window coordinates, output is in game coordinates
+    float tx = windowX;
+    float ty = windowY;
+    
     switch (ms_rotation) {
     case ROTATE_0:
-        *gameX = nx * sw;
-        *gameY = ny * sh;
+        // No rotation: just scale
+        *gameX = tx * gameW / winW;
+        *gameY = ty * gameH / winH;
         break;
         
     case ROTATE_90:
-        // Screen rotated 90 CW, so input needs 90 CCW transform
-        *gameX = ny * sw;
-        *gameY = (1.0f - nx) * sh;
+        // Window is portrait, game is landscape rotated 90 CW
+        // Window (0,0) = top-left -> Game (0, gameH)
+        // Window (winW,0) = top-right -> Game (0, 0)
+        // Window (0,winH) = bottom-left -> Game (gameW, gameH)
+        *gameX = ty * gameW / winH;
+        *gameY = (winW - tx) * gameH / winW;
         break;
         
     case ROTATE_180:
-        *gameX = (1.0f - nx) * sw;
-        *gameY = (1.0f - ny) * sh;
+        // Upside down
+        *gameX = (winW - tx) * gameW / winW;
+        *gameY = (winH - ty) * gameH / winH;
         break;
         
     case ROTATE_270:
-        *gameX = (1.0f - ny) * sw;
-        *gameY = nx * sh;
+        // Window is portrait, game is landscape rotated 270 CW (90 CCW)
+        // Window (0,0) = top-left -> Game (gameW, 0)
+        // Window (winW,0) = top-right -> Game (gameW, gameH)
+        // Window (0,winH) = bottom-left -> Game (0, 0)
+        *gameX = (winH - ty) * gameW / winH;
+        *gameY = tx * gameH / winW;
         break;
     }
+}
+
+void
+OffscreenRenderer::TransformInputCoords(double *windowX, double *windowY)
+{
+    float gx, gy;
+    TransformInputCoords((float)*windowX, (float)*windowY, &gx, &gy);
+    *windowX = (double)gx;
+    *windowY = (double)gy;
 }
 
 #endif // OFFSCREEN_RENDER
