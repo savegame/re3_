@@ -1933,7 +1933,7 @@ WinMain(HINSTANCE instance,
 int
 main(int argc, char *argv[])
 {
-#ifdef _AURORAOS_
+#ifdef AURORAOS
 	// enable right audio routing
 	setenv("PULSE_PROP_media.role", "x-maemo", 1);
 #endif 
