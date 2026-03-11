@@ -77,6 +77,27 @@ OffscreenRenderer::Init()
         debug("Landscape window %dx%d -> no rotation\n", winW, winH);
     }
     
+    int wl_transform = GLFW_TRANSFORM_NORMAL;
+    switch (ms_rotation) {
+    case ROTATE_0:
+        wl_transform = GLFW_TRANSFORM_NORMAL;
+        break;
+    case ROTATE_90:
+        wl_transform = GLFW_TRANSFORM_270;
+        break;
+    case ROTATE_180:
+        wl_transform = GLFW_TRANSFORM_180;
+        break;
+    case ROTATE_270:
+        wl_transform = GLFW_TRANSFORM_90;
+        break;
+    default:
+        wl_transform = GLFW_TRANSFORM_NORMAL;
+        break;
+    }
+    glfwSetWindowContentTransform(window, wl_transform);
+    
+    
     ms_renderAspect = (float)ms_renderWidth / (float)ms_renderHeight;
 
     // Create offscreen FBO with logical (landscape) dimensions

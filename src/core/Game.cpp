@@ -242,6 +242,9 @@ CGame::InitialiseRenderWare(void)
 	CameraSize(Scene.camera, nil, DEFAULT_VIEWWINDOW, DEFAULT_ASPECT_RATIO);
 #endif
 
+#ifdef TOUCH_CONTROLS
+	TouchControls::UpdatePhysicalScale(PSGLOBAL(window));
+#endif
 
 	/* Create a world */
 	RwBBox  bbox;
