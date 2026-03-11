@@ -230,6 +230,29 @@ private:
 	// Injection helpers
 	static void InjectKey(int32 keyID, bool pressed);
 	static void InjectPad(int32 padBtn, bool pressed);
+
+	// В private секцию класса TouchControls добавить:
+
+	// ---- Cached geometry for optimized drawing ----
+	static const int CIRCLE_SEGMENTS = 24;
+	
+	// Pre-calculated unit circle (computed once in Init)
+	static float ms_unitCircleX[CIRCLE_SEGMENTS + 1];
+	static float ms_unitCircleY[CIRCLE_SEGMENTS + 1];
+	
+	// Cached vertex buffers (avoid per-frame stack allocation)
+	static RwIm2DVertex ms_circleVerts[CIRCLE_SEGMENTS + 2];
+	
+	// Cached Z values (updated once per frame in BeginDraw)
+	static float ms_cachedNearZ;
+	static float ms_cachedRecipZ;
+	static bool  ms_renderStateSet;
+	
+	// Helper functions for batched drawing
+	static void BeginDraw(void);
+	static void EndDraw(void);
+	static void DrawFilledCircle(float cx, float cy, float radius,
+	                             uint8 r, uint8 g, uint8 b, uint8 a);
 };
 
 #endif // TOUCH_CONTROLS

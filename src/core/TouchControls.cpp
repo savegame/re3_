@@ -16,7 +16,7 @@
 // Default configuration
 float TouchControls::ms_stickRadius     = 80.0f;   // game pixels
 float TouchControls::ms_stickDeadzone   = 0.15f;   // 15% deadzone
-float TouchControls::ms_lookSensitivity = 8.5f;    // mouse sensitivity multiplier
+float TouchControls::ms_lookSensitivity = 7.5f;    // mouse sensitivity multiplier
 float TouchControls::ms_stickBaseAlpha  = 80.0f;   // semi-transparent base
 float TouchControls::ms_stickThumbAlpha = 160.0f;  // more opaque thumb
 
@@ -43,6 +43,14 @@ bool   TouchControls::ms_menuCursorValid    = false;
 TouchButton TouchControls::ms_buttons[TOUCH_MAX_BUTTONS];
 int    TouchControls::ms_numButtons    = 0;
 uint32 TouchControls::ms_currentLayout = TOUCH_LAYOUT_NONE;
+
+// Cached geometry for optimized circle drawing
+float TouchControls::ms_unitCircleX[CIRCLE_SEGMENTS + 1];
+float TouchControls::ms_unitCircleY[CIRCLE_SEGMENTS + 1];
+RwIm2DVertex TouchControls::ms_circleVerts[CIRCLE_SEGMENTS + 2];
+float TouchControls::ms_cachedNearZ = 0.0f;
+float TouchControls::ms_cachedRecipZ = 1.0f;
+bool  TouchControls::ms_renderStateSet = false;
 
 // ============================================================
 // Helper: add a button to the array
@@ -235,6 +243,15 @@ void
 TouchControls::Init(void)
 {
 	Reset();
+
+	// Pre-calculate unit circle vertices (only once!)
+	float angleStep = 2.0f * 3.14159265f / (float)CIRCLE_SEGMENTS;
+	for (int i = 0; i <= CIRCLE_SEGMENTS; i++) {
+		float angle = angleStep * i;
+		ms_unitCircleX[i] = cosf(angle);
+		ms_unitCircleY[i] = sinf(angle);
+	}
+
 	SetupButtons();
 }
 
@@ -275,58 +292,84 @@ TouchControls::Reset(void)
 void
 TouchControls::UpdatePhysicalScale(GLFWwindow *window)
 {
-	if (window == nil) return;
-	fprintf(stderr, "Update physical size: \n");
+	// Try to get window from current context if not provided
+	if (window == nil)
+		window = glfwGetCurrentContext();
+	if (window == nil)
+		return;
 
-	// Get physical monitor size in mm
+	// Get monitor
 	GLFWmonitor *monitor = glfwGetWindowMonitor(window);
 	if (monitor == nil)
 		monitor = glfwGetPrimaryMonitor();
-	if (monitor == nil) return;
+	if (monitor == nil)
+		return;
 
+	// Get physical monitor size in mm
 	int physWidthMM, physHeightMM;
 	glfwGetMonitorPhysicalSize(monitor, &physWidthMM, &physHeightMM);
-	if (physWidthMM <= 0 || physHeightMM <= 0) return;
+	if (physWidthMM <= 0 || physHeightMM <= 0)
+		return;
 
-	// Get window size in screen coords (what touch coords map to before transform)
+	// Get monitor resolution for DPI calculation
+	const GLFWvidmode *videoMode = glfwGetVideoMode(monitor);
+	if (videoMode == nil)
+		return;
+	if (videoMode->width <= 0 || videoMode->height <= 0)
+		return;
+
+	// Calculate actual DPI-based mm per monitor pixel
+	float mmPerMonitorPixelX = (float)physWidthMM / (float)videoMode->width;
+	float mmPerMonitorPixelY = (float)physHeightMM / (float)videoMode->height;
+
+	// Get window and game dimensions
 	int winW, winH;
-	glfwGetWindowSize(window, &winW, &winH);
-	if (winW <= 0 || winH <= 0) return;
+	float gameW, gameH;
 
-	// Game coordinate space
-	float gameW = (float)RsGlobal.maximumWidth;
-	float gameH = (float)RsGlobal.maximumHeight;
-	if (gameW <= 0.0f || gameH <= 0.0f) return;
+#ifdef OFFSCREEN_RENDER
+	if (OffscreenRenderer::IsInitialized()) {
+		winW = OffscreenRenderer::GetWindowWidth();
+		winH = OffscreenRenderer::GetWindowHeight();
+		gameW = (float)OffscreenRenderer::GetRenderWidth();
+		gameH = (float)OffscreenRenderer::GetRenderHeight();
+	} else
+#endif
+	{
+		// Fallback to GLFW/RsGlobal
+		glfwGetWindowSize(window, &winW, &winH);
+		gameW = (float)RsGlobal.maximumWidth;
+		gameH = (float)RsGlobal.maximumHeight;
+	}
 
-	// Physical mm per window pixel
-	float mmPerWinPixX = (float)physWidthMM / (float)winW;
-	float mmPerWinPixY = (float)physHeightMM / (float)winH;
+	if (winW <= 0 || winH <= 0)
+		return;
+	if (gameW <= 0.0f || gameH <= 0.0f)
+		return;
 
-	// Window pixels per game pixel
+	// Window pixels per game pixel (default - without rotations)
 	float winPixPerGameX = (float)winW / gameW;
 	float winPixPerGameY = (float)winH / gameH;
 
 #ifdef OFFSCREEN_RENDER
 	// With rotation, physical axes swap relative to game axes
 	if (OffscreenRenderer::IsSideways()) {
-		// Game X → physical Y, Game Y → physical X
-		// Also: transformTouchCoords swaps the window coords,
-		// so after transform, game pixels map to the swapped physical axis
-		float temp = mmPerWinPixX;
-		mmPerWinPixX = mmPerWinPixY;
-		mmPerWinPixY = temp;
+		// Game X maps to physical Y axis, Game Y maps to physical X axis
+		// Swap the mm-per-monitor-pixel values
+		float temp = mmPerMonitorPixelX;
+		mmPerMonitorPixelX = mmPerMonitorPixelY;
+		mmPerMonitorPixelY = temp;
 
+		// Also recalculate window-to-game ratio for rotated case
 		winPixPerGameX = (float)winH / gameW;
 		winPixPerGameY = (float)winW / gameH;
 	}
 #endif
 
-	// mm per game pixel (for delta normalization)
-	ms_mmPerGamePixelX = mmPerWinPixX * winPixPerGameX;
-	ms_mmPerGamePixelY = mmPerWinPixY * winPixPerGameY;
+	ms_mmPerGamePixelX = mmPerMonitorPixelX * winPixPerGameX;
+	ms_mmPerGamePixelY = mmPerMonitorPixelY * winPixPerGameY;
 
-	// Pixel aspect: ratio of physical pixel scales
-	// Used to correct circles: if >1, Y pixels are "taller" than X pixels
+	// Pixel aspect: ratio of screen scale factors
+	// Used to correct circles on non-square pixel displays
 	ms_pixelAspect = (SCREEN_SCALE_X(1.0f) > 0.0001f)
 		? SCREEN_SCALE_Y(1.0f) / SCREEN_SCALE_X(1.0f)
 		: 1.0f;
@@ -831,44 +874,29 @@ TouchControls::InjectPad(int32 padBtn, bool pressed)
 // ============================================================
 
 void
-TouchControls::DrawFilledCircle(float cx, float cy, float radius, int segments,
-                                 uint8 r, uint8 g, uint8 b, uint8 a)
+TouchControls::DrawFilledCircle(float cx, float cy, float radius,
+                                     uint8 r, uint8 g, uint8 b, uint8 a)
 {
-	float nearZ = RwIm2DGetNearScreenZ();
-	float recipZ = 1.0f / RwCameraGetNearClipPlane(Scene.camera);
-
-	int numVerts = segments + 2;
-	if (numVerts > 102) numVerts = 102;
-
-	RwIm2DVertex verts[102];
-	float angleStep = 2.0f * 3.14159265f / (float)segments;
-
-	RwIm2DVertexSetScreenX(&verts[0], cx);
-	RwIm2DVertexSetScreenY(&verts[0], cy);
-	RwIm2DVertexSetScreenZ(&verts[0], nearZ);
-	RwIm2DVertexSetRecipCameraZ(&verts[0], recipZ);
-	RwIm2DVertexSetIntRGBA(&verts[0], r, g, b, a);
-
-	for (int i = 0; i <= segments; i++) {
-		float angle = angleStep * i;
-		RwIm2DVertexSetScreenX(&verts[i + 1], cx + cosf(angle) * radius);
-		RwIm2DVertexSetScreenY(&verts[i + 1], cy + sinf(angle) * radius);
-		RwIm2DVertexSetScreenZ(&verts[i + 1], nearZ);
-		RwIm2DVertexSetRecipCameraZ(&verts[i + 1], recipZ);
-		RwIm2DVertexSetIntRGBA(&verts[i + 1], r, g, b, a);
+	// Center vertex
+	RwIm2DVertexSetScreenX(&ms_circleVerts[0], cx);
+	RwIm2DVertexSetScreenY(&ms_circleVerts[0], cy);
+	RwIm2DVertexSetScreenZ(&ms_circleVerts[0], ms_cachedNearZ);
+	RwIm2DVertexSetRecipCameraZ(&ms_circleVerts[0], ms_cachedRecipZ);
+	RwIm2DVertexSetIntRGBA(&ms_circleVerts[0], r, g, b, a);
+	
+	// Ring vertices using pre-calculated unit circle
+	for (int i = 0; i <= CIRCLE_SEGMENTS; i++) {
+		float px = cx + ms_unitCircleX[i] * radius;
+		float py = cy + ms_unitCircleY[i] * radius;
+		
+		RwIm2DVertexSetScreenX(&ms_circleVerts[i + 1], px);
+		RwIm2DVertexSetScreenY(&ms_circleVerts[i + 1], py);
+		RwIm2DVertexSetScreenZ(&ms_circleVerts[i + 1], ms_cachedNearZ);
+		RwIm2DVertexSetRecipCameraZ(&ms_circleVerts[i + 1], ms_cachedRecipZ);
+		RwIm2DVertexSetIntRGBA(&ms_circleVerts[i + 1], r, g, b, a);
 	}
-
-	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
-	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
-	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
-	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
-	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
-	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
-
-	RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, verts, numVerts);
-
-	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
-	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
+	
+	RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, ms_circleVerts, CIRCLE_SEGMENTS + 2);
 }
 
 void
@@ -880,7 +908,7 @@ TouchControls::DrawButton(TouchButton &btn)
 		float cx = btn.screenX + btn.screenW * 0.5f;
 		float cy = btn.screenY + btn.screenH * 0.5f;
 		float r  = btn.screenW * 0.5f;
-		DrawFilledCircle(cx, cy, r, 24, btn.bgR, btn.bgG, btn.bgB, alpha);
+		DrawFilledCircle(cx, cy, r, btn.bgR, btn.bgG, btn.bgB, alpha);
 	} else {
 		CSprite2d::DrawRect(
 			CRect(btn.screenX, btn.screenY,
@@ -901,7 +929,6 @@ TouchControls::DrawButton(TouchButton &btn)
 		CFont::SetWrapx(SCREEN_WIDTH);
 		CFont::SetRightJustifyOff();
 
-		// Convert label to wchar
 		wchar wlabel[8];
 		int j = 0;
 		for (const char *p = btn.label; *p && j < 7; p++, j++)
@@ -922,6 +949,8 @@ TouchControls::Draw(void)
 		return;
 	UpdateLayout();
 
+	BeginDraw();  // Set render states once
+
 	// Draw active buttons for current layout
 	for (int i = 0; i < ms_numButtons; i++) {
 		TouchButton &btn = ms_buttons[i];
@@ -937,20 +966,50 @@ TouchControls::Draw(void)
 
 			DrawFilledCircle(
 				ms_stickVisual.baseX, ms_stickVisual.baseY,
-				baseR, 32,
+				baseR,
 				255, 255, 255, (uint8)ms_stickBaseAlpha);
 
 			DrawFilledCircle(
 				ms_stickVisual.thumbX, ms_stickVisual.thumbY,
-				thumbR, 24,
+				thumbR,
 				255, 255, 255, (uint8)ms_stickThumbAlpha);
 		} else {
 			// Idle hint
 			float hintX = SCREEN_SCALE_X(120.0f);
 			float hintY = SCREEN_HEIGHT - SCREEN_SCALE_Y(120.0f);
 			float hintR = SCREEN_SCALE_X(40.0f);
-			DrawFilledCircle(hintX, hintY, hintR, 24, 255, 255, 255, 30);
+			DrawFilledCircle(hintX, hintY, hintR, 255, 255, 255, 30);
 		}
+	}
+
+	EndDraw();  // Restore render states
+}
+
+void
+TouchControls::BeginDraw(void)
+{
+	// Cache Z values once per frame
+	ms_cachedNearZ = RwIm2DGetNearScreenZ();
+	ms_cachedRecipZ = 1.0f / RwCameraGetNearClipPlane(Scene.camera);
+	
+	// Set render states ONCE for all circles
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	
+	ms_renderStateSet = true;
+}
+
+void
+TouchControls::EndDraw(void)
+{
+	if (ms_renderStateSet) {
+		RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
+		ms_renderStateSet = false;
 	}
 }
 
