@@ -71,6 +71,9 @@ long _dwOperatingSystemVersion;
 #ifdef TOUCH_CONTROLS
 #include "TouchControls.h"
 #endif
+#ifdef AURORAOS
+#include "../../extras/Launcher.h"
+#endif
 
 #define MAX_SUBSYSTEMS		(16)
 
@@ -1134,7 +1137,7 @@ RwBool _psSetVideoMode(RwInt32 subSystem, RwInt32 videoMode)
 	GcurSelVM = videoMode;
 	
 	useDefault = TRUE;
-	
+
 	if ( RsEventHandler(rsRWINITIALIZE, &openParams) == rsEVENTERROR )
 		return FALSE;
 
@@ -1936,7 +1939,14 @@ main(int argc, char *argv[])
 #ifdef AURORAOS
 	// enable right audio routing
 	setenv("PULSE_PROP_media.role", "x-maemo", 1);
-#endif 
+
+	// Check resources before continuing
+	if (Launcher::Run() == Launcher::Result::Exit) {
+		RsEventHandler(rsTERMINATE, nil);
+		return 0;
+	}
+#endif
+
 #endif
 	RwV2d pos;
 	RwInt32 i;
@@ -1958,7 +1968,7 @@ main(int argc, char *argv[])
 	sigaction(SIGUSR1, &sa, NULL);
 #endif
 #endif
-
+	fprintf(stderr, "Call RsEventHandler(rsINITIALIZE, nil);\n");
 	/* 
 	 * Initialize the platform independent data.
 	 * This will in turn initialize the platform specific data...
