@@ -93,6 +93,9 @@
 #ifdef TOUCH_CONTROLS
 #include "TouchControls.h"
 #endif
+#ifdef AURORAOS
+#include "../extras/Launcher.h"
+#endif
 
 eLevelName CGame::currLevel;
 bool CGame::bDemoMode = true;
@@ -163,9 +166,10 @@ CGame::InitialiseOnceBeforeRW(void)
 {
 	CFileMgr::Initialise();
 #ifdef AURORAOS
-	std::string path = getenv("HOME");
-	path += "/Documents/GTA3";
-	CFileMgr::ChangeDir(path.c_str());
+	const std::string &path = Launcher::GetGamePath();
+	if (!path.empty()) {
+		CFileMgr::ChangeDir(path.c_str());
+	}
 #endif
 	CdStreamInit(MAX_CDCHANNELS);
 	ValidateVersion();
