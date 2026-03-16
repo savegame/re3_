@@ -184,17 +184,21 @@ bool FolderDialog::Show(const std::string &startPath, std::string &outSelectedPa
     ImGui::Separator();
 
     // Bottom buttons
+    const float availWidth = ImGui::GetContentRegionAvail().x;
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+
     bool closeDialog = false;
     float bigButtonHeight = 50 * dpiScale;
+    float buttonWidth = std::min(200 * dpiScale, (availWidth - spacing) * 0.5f);
 
-    if (ImGui::Button("Выбрать эту папку", ImVec2(280 * dpiScale, bigButtonHeight))) {
+    if (ImGui::Button("Выбрать эту папку", ImVec2(buttonWidth, bigButtonHeight))) {
         outSelectedPath = ms_currentPath;
         closeDialog = true;
     }
 
     ImGui::SameLine();
 
-    if (ImGui::Button("Отмена", ImVec2(150 * dpiScale, bigButtonHeight))) {
+    if (ImGui::Button("Отмена", ImVec2(buttonWidth, bigButtonHeight))) {
         outSelectedPath.clear();
         closeDialog = true;
     }

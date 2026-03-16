@@ -27,6 +27,31 @@ bool Launcher::ms_disclaimerAccepted = false;
 
 bool showFolderDialog = false;
 
+// Хелпер для ссылок
+static void TextLink(const char* label, const char* url)
+{
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.6f, 1.0f, 1.0f)); // синий
+    ImGui::Text("%s", label);
+    ImGui::PopStyleColor();
+    
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        // Подчёркивание
+        ImVec2 min = ImGui::GetItemRectMin();
+        ImVec2 max = ImGui::GetItemRectMax();
+        ImGui::GetWindowDrawList()->AddLine(
+            ImVec2(min.x, max.y), ImVec2(max.x, max.y),
+            ImGui::GetColorU32(ImVec4(0.4f, 0.6f, 1.0f, 1.0f))
+        );
+    }
+    
+    if (ImGui::IsItemClicked()) {
+        // Открыть URL на Aurora OS / Linux FIXME: use RuntimeManager API for link opening
+        std::string cmd = "xdg-open \"" + std::string(url) + "\" &";
+        system(cmd.c_str());
+    }
+}
+
 float Launcher::CalculateDpiScale(GLFWwindow *window)
 {
 	// Try glfwGetWindowContentScale first
@@ -70,7 +95,7 @@ float Launcher::CalculateDpiScale(GLFWwindow *window)
 
 	// Clamp to reasonable range
 	if (scale < 1.0f) scale = 1.0f;
-	if (scale > 8.0f) scale = 8.0f;
+	if (scale > 3.25f) scale = 3.5f;
 
 	fprintf(stderr, "Launcher: DPI=%.1f, scale=%.2f\n", dpi, scale);
 
@@ -171,8 +196,7 @@ void Launcher::DrawDisclaimer(float dpiScale)
 	ImGui::Begin("DisclaimerWindow", nullptr, flags);
 
 	// Center content vertically
-	float textHeight = 300 * dpiScale; // approximate
-	float startY = (io.DisplaySize.y - textHeight) * 0.5f;
+	float startY = 20 * dpiScale;
 	if (startY < 20) startY = 20;
 	ImGui::SetCursorPosY(startY);
 
@@ -187,7 +211,7 @@ void Launcher::DrawDisclaimer(float dpiScale)
 	ImGui::Spacing();
 
 	// Text with padding
-	float padding = 40 * dpiScale;
+	float padding = 15 * dpiScale;
 	ImGui::SetCursorPosX(padding);
 	ImGui::PushTextWrapPos(io.DisplaySize.x - padding);
 	ImGui::TextWrapped(
@@ -197,8 +221,28 @@ void Launcher::DrawDisclaimer(float dpiScale)
 		"Используйте только легально приобретённые копии игры.\n\n"
 		"Разработчики не несут ответственности за использование данного ПО."
 	);
+
+	ImGui::Spacing();
+	ImGui::Spacing();
+	ImGui::Spacing();
+	ImGui::Spacing();
+
+	ImGui::SetCursorPosX(padding);
+	ImGui::TextWrapped("Поддержать портирование игр на ОС Аврора:");
+	ImGui::SetCursorPosX(padding);
+	TextLink("Подписывайтесь на Boosty", "https://boosty.to/sashikknox");
+	
+	ImGui::Spacing();
+	ImGui::Spacing();
+
+	ImGui::SetCursorPosX(padding);
+	ImGui::TextWrapped("Подписывайтесь на канал в телеграм:");
+	ImGui::SetCursorPosX(padding);
+	TextLink("@auroraosgames", "https://t.me/auroraosgames");
 	ImGui::PopTextWrapPos();
 
+	ImGui::Spacing();
+	ImGui::Spacing();
 	ImGui::Spacing();
 	ImGui::Spacing();
 
@@ -509,7 +553,7 @@ Launcher::Run()
 
 			// Status
 			if (resourcesFound) {
-				ImGui::Text("Проверка: %s", inputPath.c_str());
+				ImGui::TextWrapped("Проверка: %s", inputPath.c_str());
 				ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "[/] Все файлы найдены!");
 				
 				ImGui::Spacing();
@@ -532,19 +576,21 @@ Launcher::Run()
 			ImGui::SetCursorPosY((float)winHeight - 60.0f * dpiScale);
 			ImGui::Separator();
 			ImGui::Spacing();
+
+			float availWidth = ImGui::GetContentRegionAvail().x;
+			const float spacing = ImGui::GetStyle().ItemSpacing.x;
+			float buttonWidth = std::min(200 * dpiScale, (availWidth - spacing) * 0.5f);
 			
-			if (ImGui::Button("Выход", ImVec2(100 * dpiScale, 35 * dpiScale))) {
+			if (ImGui::Button("Выход", ImVec2(buttonWidth, 35 * dpiScale))) {
 				result = Result::Exit;
 				glfwSetWindowShouldClose(window, GLFW_TRUE);
 			}
 
 			ImGui::SameLine();
-			if (ImGui::Button("Дисклеймер", ImVec2(120 * dpiScale, 35 * dpiScale))) {
+			if (ImGui::Button("Дисклеймер", ImVec2(buttonWidth, 35 * dpiScale))) {
 				ms_showDisclaimer = true;
 			}
 			
-			ImGui::SameLine();
-			ImGui::TextDisabled("RE3 для Aurora OS");
 			ImGui::End();
 		}
 
