@@ -73,6 +73,7 @@ long _dwOperatingSystemVersion;
 #endif
 #ifdef AURORAOS
 #include "../../extras/Launcher.h"
+#include "../../extras/AuroraMCE.h"
 #endif
 
 #define MAX_SUBSYSTEMS		(16)
@@ -1909,6 +1910,12 @@ windowFocusCB(GLFWwindow* window, int focused) {
 void
 windowIconifyCB(GLFWwindow* window, int iconified) {
 	WindowIconified = !!iconified;
+#ifdef AURORAOS
+	// iconified: GLFW_TRUE = minimized, GLFW_FALSE = restored
+	if (PSGLOBAL(mce)) {
+		PSGLOBAL(mce)->SetPreventBlanking(iconified == GLFW_FALSE);
+	}
+#endif
 }
 
 /*
@@ -2037,6 +2044,13 @@ main(int argc, char *argv[])
 #endif
 
 	psPostRWinit();
+
+#ifdef AURORAOS
+	PSGLOBAL(mce) = new AuroraMCE();
+	if (PSGLOBAL(mce)->Init()) {
+		PSGLOBAL(mce)->SetPreventBlanking(true);
+	}
+#endif
 
 	ControlsManager.InitDefaultControlConfigMouse(MousePointerStateHelper.GetMouseSetUp());
 
@@ -2176,6 +2190,11 @@ main(int argc, char *argv[])
 #endif
 		{
 			glfwPollEvents();
+
+#ifdef AURORAOS
+		if (PSGLOBAL(mce))
+			PSGLOBAL(mce)->Process();
+#endif
 #ifdef GET_KEYBOARD_INPUT_FROM_X11
 			checkKeyPresses();
 #endif
@@ -2494,6 +2513,14 @@ main(int argc, char *argv[])
 #endif
 	if ( gGameState == GS_PLAYING_GAME )
 		CGame::ShutDown();
+
+#ifdef AURORAOS
+	if (PSGLOBAL(mce)) {
+		PSGLOBAL(mce)->Shutdown();
+		delete PSGLOBAL(mce);
+		PSGLOBAL(mce) = nullptr;
+	}
+#endif
 
 	DMAudio.Terminate();
 	
