@@ -53,6 +53,18 @@ target_compile_definitions(${EXECUTABLE} PRIVATE CMAKE_BUILD)
 target_compile_definitions(${EXECUTABLE} PRIVATE USE_OUR_VERSIONING)
 
 if(AURORAOS)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(DBUS REQUIRED dbus-1)
+
+    target_include_directories(${EXECUTABLE} 
+        PRIVATE ${DBUS_INCLUDE_DIRS})
+    target_link_libraries(${EXECUTABLE} 
+        PRIVATE ${DBUS_LIBRARIES})
+    target_link_directories(${EXECUTABLE} 
+        PRIVATE ${DBUS_LIBRARY_DIRS})
+    target_compile_options(${EXECUTABLE} 
+        PRIVATE ${DBUS_CFLAGS_OTHER})
+
     target_compile_definitions(${EXECUTABLE} PRIVATE AURORAOS)
     target_compile_definitions(${EXECUTABLE} PRIVATE OFFSCREEN_RENDER)
     target_compile_definitions(${EXECUTABLE} PRIVATE TOUCH_CONTROLS)
