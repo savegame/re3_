@@ -57,6 +57,10 @@ int _caserename(const char *old_filename, const char *new_filename);
 #endif
 
 #ifdef RW_GL3
+
+#ifdef AURORAOS
+class AuroraMCE;
+#endif
 // Touch state for mouse emulation
 struct psTouchState
 {
@@ -78,6 +82,9 @@ typedef struct
     RwInt8        joy1id;
     RwInt8        joy2id;
     psTouchState  touchMouse; // emulated mouse touch state
+#ifdef AURORAOS
+    AuroraMCE    *mce;
+#endif
 }
 psGlobalType;
 
