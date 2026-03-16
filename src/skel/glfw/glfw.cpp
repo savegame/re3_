@@ -1003,7 +1003,11 @@ void _InputInitialiseJoys()
 	PSGLOBAL(joy2id) = -1;
 
 	// Load our gamepad mappings.
+#ifdef AURORAOS_SHARED_DATA
+#define SDL_GAMEPAD_DB_PATH AURORAOS_SHARED_DATA "/gamecontrollerdb.txt"
+#elif !defined(SDL_GAMEPAD_DB_PATH)
 #define SDL_GAMEPAD_DB_PATH "gamecontrollerdb.txt"
+#endif
 	FILE *f = fopen(SDL_GAMEPAD_DB_PATH, "rb");
 	if (f) {
 		fseek(f, 0, SEEK_END);

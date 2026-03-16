@@ -1,6 +1,10 @@
 #include "common.h"
 #include "crossplatform.h"
 
+#ifdef AURORAOS
+#include "../extras/SearchPaths.h"
+#endif
+
 // Codes compatible with Windows and Linux
 #ifndef _WIN32
 
@@ -145,6 +149,17 @@ char *trim(char *s) {
 FILE* _fcaseopen(char const* filename, char const* mode)
 {
     FILE* result;
+    
+#ifdef AURORAOS
+    // Write mode - use write path
+    if (strchr(mode, 'w') || strchr(mode, 'a')) {
+        std::string writePath = CSearchPaths::MakeWritePath(filename);
+        result = fopen(writePath.c_str(), mode);
+        return result;
+    }
+#endif
+    
+    // Read mode - find existing file
     char* real = casepath(filename);
     if (!real)
         result = fopen(filename, mode);
@@ -159,6 +174,19 @@ int _caserename(const char *old_filename, const char *new_filename)
 {
     int result;
     char *real_old = casepath(old_filename);
+    
+#ifdef AURORAOS
+    // For new filename, build write path (file doesn't exist yet)
+    std::string new_path = CSearchPaths::MakeWritePath(new_filename);
+    
+    if (real_old)
+        result = rename(real_old, new_path.c_str());
+    else
+        result = rename(old_filename, new_path.c_str());
+    
+    free(real_old);
+    return result;
+#else
     char *real_new = casepath(new_filename);
 
     // hack so we don't even try to rename it to new_filename if it already exists
@@ -176,17 +204,67 @@ int _caserename(const char *old_filename, const char *new_filename)
     free(real_new);
 
     return result;
+#endif
 }
 
 // Case-insensitivity on linux (from https://github.com/OneSadCookie/fcaseopen)
 // Returned string should freed manually (if exists)
 char* casepath(char const* path, bool checkPathFirst)
 {
+    if (!path || !path[0]) 
+        return nil;
+
+    // Quick check - path already correct?
     if (checkPathFirst && access(path, F_OK) != -1) {
         // File path is correct
         return nil;
     }
 
+#ifdef AURORAOS
+    // Not an absolut path and has search paths
+    if (path[0] != '/' && path[0] != '\\' && CSearchPaths::GetCount() > 0) {
+        // Get current working directory
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd))) {
+            // Check if CWD is inside any search path
+            for (size_t i = 0; i < CSearchPaths::GetCount(); i++) {
+                const std::string &base = CSearchPaths::Get(i);
+                if (strncmp(cwd, base.c_str(), base.size()) == 0) {
+                    // CWD is inside this search path
+                    const char *subdir = cwd + base.size();
+                    if (*subdir == '/') subdir++;
+                    
+                    // Build full relative path: subdir + path
+                    std::string fullRelative;
+                    if (*subdir) {
+                        fullRelative = std::string(subdir) + "/" + path;
+                    } else {
+                        fullRelative = path;
+                    }
+                    
+                    std::string found = CSearchPaths::FindFile(fullRelative);
+                    if (!found.empty()) {
+                        char *result = (char*)malloc(found.size() + 1);
+                        strcpy(result, found.c_str());
+                        return result;
+                    }
+                }
+            }
+        }
+        
+        // Fallback: try path directly (for calls before any chdir)
+        std::string found = CSearchPaths::FindFile(path);
+        if (!found.empty()) {
+            char *result = (char*)malloc(found.size() + 1);
+            strcpy(result, found.c_str());
+            return result;
+        }
+        
+        return nil;
+    }
+#endif
+
+    // Original implementation for absolute paths and fallback
     size_t l = strlen(path);
     char* p = (char*)alloca(l + 1);
     char* out = (char*)malloc(l + 3); // for extra ./

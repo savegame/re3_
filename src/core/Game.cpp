@@ -95,6 +95,7 @@
 #endif
 #ifdef AURORAOS
 #include "../extras/Launcher.h"
+#include "../extras/SearchPaths.h"
 #endif
 
 eLevelName CGame::currLevel;
@@ -166,9 +167,17 @@ CGame::InitialiseOnceBeforeRW(void)
 {
 	CFileMgr::Initialise();
 #ifdef AURORAOS
+	// RE3 embedded gamedata (readonly) first
+#ifdef AURORAOS_SHARED_DATA
+	CSearchPaths::Add(AURORAOS_SHARED_DATA);
+#else
+	CSearchPaths::Add("/usr/share/ru.sashikknox.re3/data");
+#endif
+	// then original gamedata
 	const std::string &path = Launcher::GetGamePath();
 	if (!path.empty()) {
 		CFileMgr::ChangeDir(path.c_str());
+		CSearchPaths::Add(path);
 	}
 #endif
 	CdStreamInit(MAX_CDCHANNELS);
