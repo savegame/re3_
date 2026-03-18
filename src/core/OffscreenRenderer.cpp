@@ -1,6 +1,10 @@
 /*
  * OffscreenRenderer.cpp - Offscreen rendering implementation
  * 
+ * Supports dual-buffer rendering:
+ *   - 3D camera renders at configurable resolution
+ *   - UI buffer renders at native resolution
+ *   - Final blit to screen with rotation
  */
 
 #ifdef OFFSCREEN_RENDER
@@ -13,27 +17,59 @@
 #include "OffscreenRenderer.h"
 #include <GLFW/glfw3.h>
 
+
+#include "../rw/VisibilityPlugins.h"
+#include "Clouds.h"
+#include "Sprite.h"
+#include "Timecycle.h"
+#include "Weather.h"
+#include "ZoneCull.h"
+// =============================================================================
 // Static member initialization
+// =============================================================================
+
+// UI buffer
 RwRaster *OffscreenRenderer::ms_offscreenColor = nil;
 RwRaster *OffscreenRenderer::ms_offscreenDepth = nil;
 RwRaster *OffscreenRenderer::ms_origColor = nil;
 RwRaster *OffscreenRenderer::ms_origDepth = nil;
 
+// 3D camera
+RwCamera *OffscreenRenderer::ms_3dCamera = nil;
+RwFrame *OffscreenRenderer::ms_3dFrame = nil;
+RwCamera *OffscreenRenderer::ms_savedSceneCamera = nil;
+
+// Cached blit geometry
+RwIm2DVertex OffscreenRenderer::ms_3dBlitVerts[4];
+RwImVertexIndex OffscreenRenderer::ms_3dBlitIndices[6] = { 0, 1, 2, 0, 2, 3 };
+RwIm2DVertex OffscreenRenderer::ms_screenBlitVerts[4];
+RwImVertexIndex OffscreenRenderer::ms_screenBlitIndices[6] = { 0, 1, 2, 0, 2, 3 };
+
+// State
 bool OffscreenRenderer::ms_initialized = false;
 bool OffscreenRenderer::ms_enabled = true;
 bool OffscreenRenderer::ms_inFrame = false;
+bool OffscreenRenderer::ms_in3D = false;
 
+int OffscreenRenderer::ms_savedRsWidth = 0;
+int OffscreenRenderer::ms_savedRsHeight = 0;
+
+// UI parameters
 int OffscreenRenderer::ms_renderWidth = 0;
 int OffscreenRenderer::ms_renderHeight = 0;
 int OffscreenRenderer::ms_windowWidth = 0;
 int OffscreenRenderer::ms_windowHeight = 0;
 float OffscreenRenderer::ms_renderAspect = 16.0f/9.0f;
-float OffscreenRenderer::ms_renderScale = 1.0f;
 OffscreenRenderer::Rotation OffscreenRenderer::ms_rotation = ROTATE_0;
 
-// Fullscreen quad vertices and indices
-static RwIm2DVertex blitVerts[4];
-static RwImVertexIndex blitIndices[6] = { 0, 1, 2, 0, 2, 3 };
+// 3D parameters
+int OffscreenRenderer::ms_3dWidth = 0;
+int OffscreenRenderer::ms_3dHeight = 0;
+float OffscreenRenderer::ms_3dScale = 0.5f;  // Default: half resolution
+
+// =============================================================================
+// Initialization / Shutdown
+// =============================================================================
 
 bool
 OffscreenRenderer::Init()
@@ -65,7 +101,7 @@ OffscreenRenderer::Init()
     if (winW < winH) {
         // Portrait window -> render in landscape with 90 degree rotation
         ms_rotation = ROTATE_90;
-        ms_renderWidth = winH;   // swap dimensions for landscape FBO
+        ms_renderWidth = winH;
         ms_renderHeight = winW;
         debug("Portrait window %dx%d -> landscape render %dx%d (rotation 90)\n",
               winW, winH, ms_renderWidth, ms_renderHeight);
@@ -77,37 +113,25 @@ OffscreenRenderer::Init()
         debug("Landscape window %dx%d -> no rotation\n", winW, winH);
     }
     
+    // Set Wayland transform
     int wl_transform = GLFW_TRANSFORM_NORMAL;
     switch (ms_rotation) {
-    case ROTATE_0:
-        wl_transform = GLFW_TRANSFORM_NORMAL;
-        break;
-    case ROTATE_90:
-        wl_transform = GLFW_TRANSFORM_270;
-        break;
-    case ROTATE_180:
-        wl_transform = GLFW_TRANSFORM_180;
-        break;
-    case ROTATE_270:
-        wl_transform = GLFW_TRANSFORM_90;
-        break;
-    default:
-        wl_transform = GLFW_TRANSFORM_NORMAL;
-        break;
+    case ROTATE_0:   wl_transform = GLFW_TRANSFORM_NORMAL; break;
+    case ROTATE_90:  wl_transform = GLFW_TRANSFORM_270;    break;
+    case ROTATE_180: wl_transform = GLFW_TRANSFORM_180;    break;
+    case ROTATE_270: wl_transform = GLFW_TRANSFORM_90;     break;
     }
     glfwSetWindowContentTransform(window, wl_transform);
     
-    
     ms_renderAspect = (float)ms_renderWidth / (float)ms_renderHeight;
 
-    // Create offscreen FBO with logical (landscape) dimensions
+    // Create UI FBO
     if (!CreateOffscreenBuffers(ms_renderWidth, ms_renderHeight)) {
-        debug("OffscreenRenderer::Init - Failed to create buffers\n");
+        debug("OffscreenRenderer::Init - Failed to create UI buffers\n");
         return false;
     }
     
-    // Set RsGlobal to logical dimensions - this makes the game think
-    // it's running in landscape mode regardless of actual window orientation
+    // Set RsGlobal to logical dimensions
     RsGlobal.width = ms_renderWidth;
     RsGlobal.height = ms_renderHeight;
     RsGlobal.maximumWidth = ms_renderWidth;
@@ -116,9 +140,9 @@ OffscreenRenderer::Init()
     ms_initialized = true;
     ms_enabled = true;
 
-    debug("OffscreenRenderer initialized: FBO %dx%d, RsGlobal set to %dx%d\n",
+    debug("OffscreenRenderer initialized: UI %dx%d, 3D %dx%d (scale %.2f)\n",
           ms_renderWidth, ms_renderHeight,
-          RsGlobal.maximumWidth, RsGlobal.maximumHeight);
+          ms_3dWidth, ms_3dHeight, ms_3dScale);
     return true;
 }
 
@@ -128,20 +152,24 @@ OffscreenRenderer::Shutdown(void)
     if (!ms_initialized)
         return;
     
+    Destroy3DCamera();
     DestroyOffscreenBuffers();
     
     ms_initialized = false;
     ms_enabled = false;
     ms_inFrame = false;
+    ms_in3D = false;
     
     debug("OffscreenRenderer shutdown\n");
 }
 
+// =============================================================================
+// UI Buffer Management
+// =============================================================================
+
 bool
 OffscreenRenderer::CreateOffscreenBuffers(int width, int height)
 {
-    // Create color buffer (CAMERATEXTURE = can be sampled as texture)
-    // rwRASTERTYPECAMERATEXTURE = 5, rwRASTERFORMAT8888 = 0x500
     ms_offscreenColor = RwRasterCreate(width, height, 0,
         rwRASTERTYPECAMERATEXTURE | rwRASTERFORMAT8888);
     
@@ -150,11 +178,7 @@ OffscreenRenderer::CreateOffscreenBuffers(int width, int height)
         return false;
     }
     
-    // Create depth buffer
-    // rwRASTERTYPEZBUFFER = 1
-    // librw automatically uses GL_DEPTH24_STENCIL8 internally
-    ms_offscreenDepth = RwRasterCreate(width, height, 0,
-        rwRASTERTYPEZBUFFER);
+    ms_offscreenDepth = RwRasterCreate(width, height, 0, rwRASTERTYPEZBUFFER);
     
     if (ms_offscreenDepth == nil) {
         debug("Failed to create offscreen depth raster\n");
@@ -163,7 +187,7 @@ OffscreenRenderer::CreateOffscreenBuffers(int width, int height)
         return false;
     }
     
-    debug("Created offscreen buffers: %dx%d\n", width, height);
+    debug("Created UI buffers: %dx%d\n", width, height);
     return true;
 }
 
@@ -181,6 +205,169 @@ OffscreenRenderer::DestroyOffscreenBuffers(void)
     }
 }
 
+// =============================================================================
+// 3D Camera Management
+// =============================================================================
+
+bool
+OffscreenRenderer::Create3DCamera(void)
+{
+    // Calculate dimensions
+    ms_3dWidth = (int)(ms_renderWidth * ms_3dScale);
+    ms_3dHeight = (int)(ms_renderHeight * ms_3dScale);
+    
+    // Ensure minimum size and even dimensions
+    if (ms_3dWidth < 320) ms_3dWidth = 320;
+    if (ms_3dHeight < 180) ms_3dHeight = 180;
+    ms_3dWidth = (ms_3dWidth + 1) & ~1;
+    ms_3dHeight = (ms_3dHeight + 1) & ~1;
+    
+    // Create frame
+    ms_3dFrame = RwFrameCreate();
+    if (!ms_3dFrame) {
+        debug("Failed to create 3D frame\n");
+        return false;
+    }
+    
+    // Create camera
+    ms_3dCamera = RwCameraCreate();
+    if (!ms_3dCamera) {
+        debug("Failed to create 3D camera\n");
+        RwFrameDestroy(ms_3dFrame);
+        ms_3dFrame = nil;
+        return false;
+    }
+    
+    RwCameraSetFrame(ms_3dCamera, ms_3dFrame);
+    
+    // Create color raster (CAMERATEXTURE for sampling)
+    RwRaster *colorRaster = RwRasterCreate(ms_3dWidth, ms_3dHeight, 0,
+        rwRASTERTYPECAMERATEXTURE | rwRASTERFORMAT8888);
+    
+    if (!colorRaster) {
+        debug("Failed to create 3D color raster\n");
+        RwCameraDestroy(ms_3dCamera);
+        RwFrameDestroy(ms_3dFrame);
+        ms_3dCamera = nil;
+        ms_3dFrame = nil;
+        return false;
+    }
+    
+    // Create depth raster
+    RwRaster *depthRaster = RwRasterCreate(ms_3dWidth, ms_3dHeight, 0,
+        rwRASTERTYPEZBUFFER);
+    
+    if (!depthRaster) {
+        debug("Failed to create 3D depth raster\n");
+        RwRasterDestroy(colorRaster);
+        RwCameraDestroy(ms_3dCamera);
+        RwFrameDestroy(ms_3dFrame);
+        ms_3dCamera = nil;
+        ms_3dFrame = nil;
+        return false;
+    }
+    
+    RwCameraSetRaster(ms_3dCamera, colorRaster);
+    RwCameraSetZRaster(ms_3dCamera, depthRaster);
+    
+    // Set projection type
+    RwCameraSetProjection(ms_3dCamera, rwPERSPECTIVE);
+    
+    // Add to world
+    if (Scene.world) {
+        RpWorldAddCamera(Scene.world, ms_3dCamera);
+    }
+    
+    // Setup cached blit vertices
+    Setup3DBlitQuad();
+    
+    debug("Created 3D camera: %dx%d (scale %.2f)\n", 
+          ms_3dWidth, ms_3dHeight, ms_3dScale);
+    
+    return true;
+}
+
+void
+OffscreenRenderer::Destroy3DCamera(void)
+{
+    if (ms_3dCamera) {
+        // Remove from world
+        if (Scene.world) {
+            RpWorldRemoveCamera(Scene.world, ms_3dCamera);
+        }
+        
+        // Destroy rasters
+        RwRaster *color = RwCameraGetRaster(ms_3dCamera);
+        RwRaster *depth = RwCameraGetZRaster(ms_3dCamera);
+        
+        if (color) RwRasterDestroy(color);
+        if (depth) RwRasterDestroy(depth);
+        
+        RwCameraDestroy(ms_3dCamera);
+        ms_3dCamera = nil;
+    }
+    
+    if (ms_3dFrame) {
+        RwFrameDestroy(ms_3dFrame);
+        ms_3dFrame = nil;
+    }
+    
+    ms_3dWidth = 0;
+    ms_3dHeight = 0;
+}
+
+void
+OffscreenRenderer::Setup3DBlitQuad(void)
+{
+    // Full UI buffer dimensions
+    float w = (float)ms_renderWidth;
+    float h = (float)ms_renderHeight;
+    
+    // Fixed Z values for 2D blit
+    float nearZ = 0.0f;
+    float recipZ = 1.0f;
+    
+    // Top-left
+    RwIm2DVertexSetScreenX(&ms_3dBlitVerts[0], 0.0f);
+    RwIm2DVertexSetScreenY(&ms_3dBlitVerts[0], 0.0f);
+    RwIm2DVertexSetScreenZ(&ms_3dBlitVerts[0], nearZ);
+    RwIm2DVertexSetRecipCameraZ(&ms_3dBlitVerts[0], recipZ);
+    RwIm2DVertexSetIntRGBA(&ms_3dBlitVerts[0], 255, 255, 255, 255);
+    RwIm2DVertexSetU(&ms_3dBlitVerts[0], 0.0f, recipZ);
+    RwIm2DVertexSetV(&ms_3dBlitVerts[0], 0.0f, recipZ);
+    
+    // Top-right
+    RwIm2DVertexSetScreenX(&ms_3dBlitVerts[1], w);
+    RwIm2DVertexSetScreenY(&ms_3dBlitVerts[1], 0.0f);
+    RwIm2DVertexSetScreenZ(&ms_3dBlitVerts[1], nearZ);
+    RwIm2DVertexSetRecipCameraZ(&ms_3dBlitVerts[1], recipZ);
+    RwIm2DVertexSetIntRGBA(&ms_3dBlitVerts[1], 255, 255, 255, 255);
+    RwIm2DVertexSetU(&ms_3dBlitVerts[1], 1.0f, recipZ);
+    RwIm2DVertexSetV(&ms_3dBlitVerts[1], 0.0f, recipZ);
+    
+    // Bottom-right
+    RwIm2DVertexSetScreenX(&ms_3dBlitVerts[2], w);
+    RwIm2DVertexSetScreenY(&ms_3dBlitVerts[2], h);
+    RwIm2DVertexSetScreenZ(&ms_3dBlitVerts[2], nearZ);
+    RwIm2DVertexSetRecipCameraZ(&ms_3dBlitVerts[2], recipZ);
+    RwIm2DVertexSetIntRGBA(&ms_3dBlitVerts[2], 255, 255, 255, 255);
+    RwIm2DVertexSetU(&ms_3dBlitVerts[2], 1.0f, recipZ);
+    RwIm2DVertexSetV(&ms_3dBlitVerts[2], 1.0f, recipZ);
+    
+    // Bottom-left
+    RwIm2DVertexSetScreenX(&ms_3dBlitVerts[3], 0.0f);
+    RwIm2DVertexSetScreenY(&ms_3dBlitVerts[3], h);
+    RwIm2DVertexSetScreenZ(&ms_3dBlitVerts[3], nearZ);
+    RwIm2DVertexSetRecipCameraZ(&ms_3dBlitVerts[3], recipZ);
+    RwIm2DVertexSetIntRGBA(&ms_3dBlitVerts[3], 255, 255, 255, 255);
+    RwIm2DVertexSetU(&ms_3dBlitVerts[3], 0.0f, recipZ);
+    RwIm2DVertexSetV(&ms_3dBlitVerts[3], 1.0f, recipZ);
+}
+
+// =============================================================================
+// Frame Control
+// =============================================================================
+
 void
 OffscreenRenderer::BeginFrame(void)
 {
@@ -196,7 +383,7 @@ OffscreenRenderer::BeginFrame(void)
     ms_origColor = RwCameraGetRaster(rwCam);
     ms_origDepth = RwCameraGetZRaster(rwCam);
     
-    // Redirect to offscreen
+    // Redirect to UI offscreen buffer
     RwCameraSetRaster(rwCam, ms_offscreenColor);
     RwCameraSetZRaster(rwCam, ms_offscreenDepth);
     
@@ -220,9 +407,138 @@ OffscreenRenderer::EndFrame(void)
     
     ms_inFrame = false;
     
-    // Blit offscreen to screen
+    // Blit UI buffer to screen with rotation
     BlitToScreen();
 }
+
+// =============================================================================
+// 3D Rendering
+// =============================================================================
+
+void
+OffscreenRenderer::Begin3D(void)
+{
+    // Lazy init
+    if (!ms_3dCamera && ms_3dScale <= 1.0f && Scene.world != nil) {
+        Create3DCamera();
+    }
+    
+    if (!ms_3dCamera || ms_in3D)
+        return;
+    
+    // // End update on current camera
+    RwCameraEndUpdate(Scene.camera);
+
+    // Copy camera parameters
+    RwCameraSetNearClipPlane(ms_3dCamera, RwCameraGetNearClipPlane(Scene.camera));
+    RwCameraSetFarClipPlane(ms_3dCamera, RwCameraGetFarClipPlane(Scene.camera));
+    RwCameraSetFogDistance(ms_3dCamera, RwCameraGetFogDistance(Scene.camera));
+    
+    const RwV2d *vw = RwCameraGetViewWindow(Scene.camera);
+    const RwV2d *vo = RwCameraGetViewOffset(Scene.camera);
+    RwCameraSetViewWindow(ms_3dCamera, vw);
+    RwCameraSetViewOffset(ms_3dCamera, vo);
+    
+    // Copy frame transform
+    RwFrame *mainFrame = RwCameraGetFrame(Scene.camera);
+    RwMatrix *mainMat = RwFrameGetLTM(mainFrame);
+    RwFrameTransform(ms_3dFrame, mainMat, rwCOMBINEREPLACE);
+    
+    // // Save and swap
+    ms_savedSceneCamera = Scene.camera;
+    Scene.camera = ms_3dCamera;
+    
+    // // Save and update RsGlobal
+    ms_savedRsWidth = RsGlobal.width;
+    ms_savedRsHeight = RsGlobal.height;
+    RsGlobal.width = ms_3dWidth;
+    RsGlobal.height = ms_3dHeight;
+
+    RwRect rect {0, 0, ms_3dWidth, ms_3dHeight};
+
+    // Begin update on 3D camera
+    RwCameraBeginUpdate(ms_3dCamera);
+
+    TheCamera.m_viewMatrix.Update();
+    // Render sky background first
+    if(CWeather::LightningFlash && !CCullZones::CamNoRain())
+        CClouds::RenderBackground(255, 255, 255, 255, 255, 255, 255);
+    else
+        CClouds::RenderBackground(
+            CTimeCycle::GetSkyTopRed(), CTimeCycle::GetSkyTopGreen(), CTimeCycle::GetSkyTopBlue(),
+            CTimeCycle::GetSkyBottomRed(), CTimeCycle::GetSkyBottomGreen(), CTimeCycle::GetSkyBottomBlue(), 255);
+    
+    CClouds::RenderHorizon();
+
+    // Clear Z buffer after sky rendering to avoid render artifacts
+    CRGBA clearColor(CTimeCycle::GetSkyBottomRed(), CTimeCycle::GetSkyBottomGreen(), CTimeCycle::GetSkyBottomBlue(), 255);
+    RwCameraClear(ms_3dCamera, &clearColor.rwRGBA, rwCAMERACLEARZ); 
+
+    ms_in3D = true;
+}
+
+void
+OffscreenRenderer::End3D(void)
+{
+    if (!ms_in3D || !ms_savedSceneCamera)
+        return;
+    
+    // CRITICAL: End update on 3D camera
+    RwCameraEndUpdate(ms_3dCamera);
+    
+    // Restore main camera
+    Scene.camera = ms_savedSceneCamera;
+    ms_savedSceneCamera = nil;
+    
+    // Restore RsGlobal
+    RsGlobal.width = ms_savedRsWidth;
+    RsGlobal.height = ms_savedRsHeight;
+    
+    ms_in3D = false;
+    
+    // Blit 3D result to UI buffer (this does its own BeginUpdate/EndUpdate)
+    Blit3DToUI();
+    
+    // CRITICAL: Resume update on main camera for UI rendering
+    RwCameraBeginUpdate(Scene.camera);
+}
+
+void
+OffscreenRenderer::Blit3DToUI(void)
+{
+    RwRaster *src = RwCameraGetRaster(ms_3dCamera);
+    if (!src)
+        return;
+    
+    if (!RwCameraBeginUpdate(Scene.camera))
+        return;
+    
+    // Set render states
+    RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+    RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+    RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+    RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+    RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+    RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
+    RwRenderStateSet(rwRENDERSTATETEXTURERASTER, src);
+    RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+    RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
+    
+    // Draw cached quad
+    RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, ms_3dBlitVerts, 4, ms_3dBlitIndices, 6);
+    
+    // Restore states
+    RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+    RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
+    RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
+    
+    RwCameraEndUpdate(Scene.camera);
+}
+
+// =============================================================================
+// Screen Blit (UI -> Physical Screen with rotation)
+// =============================================================================
 
 void
 OffscreenRenderer::SetupBlitQuad(void)
@@ -233,20 +549,17 @@ OffscreenRenderer::SetupBlitQuad(void)
     float recipZ = 1.0f / RwCameraGetNearClipPlane(Scene.camera);
     
     // UV coordinates based on rotation
-    // OpenGL renders bottom-up, so we flip V by default
     float u0, v0, u1, v1, u2, v2, u3, v3;
     
     switch (ms_rotation) {
     case ROTATE_0:
-        // No rotation, direct mapping
-        u0 = 0.0f; v0 = 0.0f;  // TL screen
-        u1 = 1.0f; v1 = 0.0f;  // TR screen
-        u2 = 1.0f; v2 = 1.0f;  // BR screen
-        u3 = 0.0f; v3 = 1.0f;  // BL screen
+        u0 = 0.0f; v0 = 0.0f;
+        u1 = 1.0f; v1 = 0.0f;
+        u2 = 1.0f; v2 = 1.0f;
+        u3 = 0.0f; v3 = 1.0f;
         break;
         
     case ROTATE_90:
-        // 90° CW
         u0 = 0.0f; v0 = 1.0f;
         u1 = 0.0f; v1 = 0.0f;
         u2 = 1.0f; v2 = 0.0f;
@@ -254,7 +567,6 @@ OffscreenRenderer::SetupBlitQuad(void)
         break;
         
     case ROTATE_180:
-        // 180°
         u0 = 1.0f; v0 = 1.0f;
         u1 = 0.0f; v1 = 1.0f;
         u2 = 0.0f; v2 = 0.0f;
@@ -262,7 +574,6 @@ OffscreenRenderer::SetupBlitQuad(void)
         break;
         
     case ROTATE_270:
-        // 270° CW (90° CCW)
         u0 = 1.0f; v0 = 0.0f;
         u1 = 1.0f; v1 = 1.0f;
         u2 = 0.0f; v2 = 1.0f;
@@ -270,41 +581,41 @@ OffscreenRenderer::SetupBlitQuad(void)
         break;
     }
     
-    // Top-left vertex
-    RwIm2DVertexSetScreenX(&blitVerts[0], 0.0f);
-    RwIm2DVertexSetScreenY(&blitVerts[0], 0.0f);
-    RwIm2DVertexSetScreenZ(&blitVerts[0], nearZ);
-    RwIm2DVertexSetRecipCameraZ(&blitVerts[0], recipZ);
-    RwIm2DVertexSetIntRGBA(&blitVerts[0], 255, 255, 255, 255);
-    RwIm2DVertexSetU(&blitVerts[0], u0, recipZ);
-    RwIm2DVertexSetV(&blitVerts[0], v0, recipZ);
+    // Top-left
+    RwIm2DVertexSetScreenX(&ms_screenBlitVerts[0], 0.0f);
+    RwIm2DVertexSetScreenY(&ms_screenBlitVerts[0], 0.0f);
+    RwIm2DVertexSetScreenZ(&ms_screenBlitVerts[0], nearZ);
+    RwIm2DVertexSetRecipCameraZ(&ms_screenBlitVerts[0], recipZ);
+    RwIm2DVertexSetIntRGBA(&ms_screenBlitVerts[0], 255, 255, 255, 255);
+    RwIm2DVertexSetU(&ms_screenBlitVerts[0], u0, recipZ);
+    RwIm2DVertexSetV(&ms_screenBlitVerts[0], v0, recipZ);
     
-    // Top-right vertex
-    RwIm2DVertexSetScreenX(&blitVerts[1], screenW);
-    RwIm2DVertexSetScreenY(&blitVerts[1], 0.0f);
-    RwIm2DVertexSetScreenZ(&blitVerts[1], nearZ);
-    RwIm2DVertexSetRecipCameraZ(&blitVerts[1], recipZ);
-    RwIm2DVertexSetIntRGBA(&blitVerts[1], 255, 255, 255, 255);
-    RwIm2DVertexSetU(&blitVerts[1], u1, recipZ);
-    RwIm2DVertexSetV(&blitVerts[1], v1, recipZ);
+    // Top-right
+    RwIm2DVertexSetScreenX(&ms_screenBlitVerts[1], screenW);
+    RwIm2DVertexSetScreenY(&ms_screenBlitVerts[1], 0.0f);
+    RwIm2DVertexSetScreenZ(&ms_screenBlitVerts[1], nearZ);
+    RwIm2DVertexSetRecipCameraZ(&ms_screenBlitVerts[1], recipZ);
+    RwIm2DVertexSetIntRGBA(&ms_screenBlitVerts[1], 255, 255, 255, 255);
+    RwIm2DVertexSetU(&ms_screenBlitVerts[1], u1, recipZ);
+    RwIm2DVertexSetV(&ms_screenBlitVerts[1], v1, recipZ);
     
-    // Bottom-right vertex
-    RwIm2DVertexSetScreenX(&blitVerts[2], screenW);
-    RwIm2DVertexSetScreenY(&blitVerts[2], screenH);
-    RwIm2DVertexSetScreenZ(&blitVerts[2], nearZ);
-    RwIm2DVertexSetRecipCameraZ(&blitVerts[2], recipZ);
-    RwIm2DVertexSetIntRGBA(&blitVerts[2], 255, 255, 255, 255);
-    RwIm2DVertexSetU(&blitVerts[2], u2, recipZ);
-    RwIm2DVertexSetV(&blitVerts[2], v2, recipZ);
+    // Bottom-right
+    RwIm2DVertexSetScreenX(&ms_screenBlitVerts[2], screenW);
+    RwIm2DVertexSetScreenY(&ms_screenBlitVerts[2], screenH);
+    RwIm2DVertexSetScreenZ(&ms_screenBlitVerts[2], nearZ);
+    RwIm2DVertexSetRecipCameraZ(&ms_screenBlitVerts[2], recipZ);
+    RwIm2DVertexSetIntRGBA(&ms_screenBlitVerts[2], 255, 255, 255, 255);
+    RwIm2DVertexSetU(&ms_screenBlitVerts[2], u2, recipZ);
+    RwIm2DVertexSetV(&ms_screenBlitVerts[2], v2, recipZ);
     
-    // Bottom-left vertex
-    RwIm2DVertexSetScreenX(&blitVerts[3], 0.0f);
-    RwIm2DVertexSetScreenY(&blitVerts[3], screenH);
-    RwIm2DVertexSetScreenZ(&blitVerts[3], nearZ);
-    RwIm2DVertexSetRecipCameraZ(&blitVerts[3], recipZ);
-    RwIm2DVertexSetIntRGBA(&blitVerts[3], 255, 255, 255, 255);
-    RwIm2DVertexSetU(&blitVerts[3], u3, recipZ);
-    RwIm2DVertexSetV(&blitVerts[3], v3, recipZ);
+    // Bottom-left
+    RwIm2DVertexSetScreenX(&ms_screenBlitVerts[3], 0.0f);
+    RwIm2DVertexSetScreenY(&ms_screenBlitVerts[3], screenH);
+    RwIm2DVertexSetScreenZ(&ms_screenBlitVerts[3], nearZ);
+    RwIm2DVertexSetRecipCameraZ(&ms_screenBlitVerts[3], recipZ);
+    RwIm2DVertexSetIntRGBA(&ms_screenBlitVerts[3], 255, 255, 255, 255);
+    RwIm2DVertexSetU(&ms_screenBlitVerts[3], u3, recipZ);
+    RwIm2DVertexSetV(&ms_screenBlitVerts[3], v3, recipZ);
 }
 
 void
@@ -313,17 +624,13 @@ OffscreenRenderer::BlitToScreen(void)
     if (ms_offscreenColor == nil)
         return;
     
-    // We need to render to the screen, so begin update on original camera
-    // This should be called AFTER RwCameraEndUpdate but BEFORE RsCameraShowRaster
-    // At this point the camera is not in update mode, so we do a quick begin/end
-    
     if (!RwCameraBeginUpdate(Scene.camera))
         return;
     
     // Setup fullscreen quad with rotation
     SetupBlitQuad();
     
-    // Set render states for blitting
+    // Set render states
     RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
     RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
     RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
@@ -331,22 +638,24 @@ OffscreenRenderer::BlitToScreen(void)
     RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
     RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
     RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
-    
-    // Set the offscreen color buffer as texture
     RwRenderStateSet(rwRENDERSTATETEXTURERASTER, ms_offscreenColor);
     RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
     RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
     
     // Render fullscreen quad
-    RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, blitVerts, 4, blitIndices, 6);
+    RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, ms_screenBlitVerts, 4, ms_screenBlitIndices, 6);
     
-    // Restore some states
+    // Restore states
     RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
     RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
     RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
     
     RwCameraEndUpdate(Scene.camera);
 }
+
+// =============================================================================
+// Configuration
+// =============================================================================
 
 bool
 OffscreenRenderer::Resize(int newWidth, int newHeight)
@@ -364,10 +673,41 @@ OffscreenRenderer::Resize(int newWidth, int newHeight)
     ms_renderWidth = newWidth;
     ms_renderHeight = newHeight;
     
-    return CreateOffscreenBuffers(newWidth, newHeight);
+    if (!CreateOffscreenBuffers(newWidth, newHeight))
+        return false;
+    
+    // Recreate 3D camera with new proportions if needed
+    if (ms_3dCamera && ms_3dScale <= 1.0f) {
+        Destroy3DCamera();
+        Create3DCamera();
+    }
+    
+    return true;
 }
 
-// Helper: check if rotation is "sideways" (90 or 270)
+void
+OffscreenRenderer::Set3DResolution(float scale)
+{
+    if (scale < 0.25f) scale = 0.25f;
+    if (scale > 1.0f) scale = 1.0f;
+    
+    if (scale == ms_3dScale)
+        return;
+    
+    ms_3dScale = scale;
+    
+    if (!ms_initialized)
+        return;
+    
+    // Destroy existing 3D camera
+    Destroy3DCamera();
+    
+    // Create new one if scaling is enabled
+    if (scale < 1.0f) {
+        Create3DCamera();
+    }
+}
+
 static bool
 IsRotationSideways(OffscreenRenderer::Rotation rot)
 {
@@ -386,10 +726,8 @@ OffscreenRenderer::SetRotation(Rotation rot)
     
     ms_rotation = rot;
     
-    // If orientation changed (landscape <-> portrait), resize buffer
-    // 0/180 <-> 90/270 requires buffer resize (swap dimensions)
+    // If orientation changed, resize buffer
     if (wasSideways != isSideways) {
-        // Swap width and height
         int newW = ms_renderHeight;
         int newH = ms_renderWidth;
         
@@ -399,17 +737,16 @@ OffscreenRenderer::SetRotation(Rotation rot)
             Resize(newW, newH);
         }
     }
-    // else: 0<->180 or 90<->270 - just UV change, no resize needed
 
-    // Inform Wayland compositor about buffer transform
+    // Inform Wayland compositor
     GLFWwindow* window = glfwGetCurrentContext();
     if (window) {
         int transform;
         switch (rot) {
         case ROTATE_0:   transform = GLFW_TRANSFORM_NORMAL; break;
-        case ROTATE_90: transform = GLFW_TRANSFORM_270;    break;
+        case ROTATE_90:  transform = GLFW_TRANSFORM_270;    break;
         case ROTATE_180: transform = GLFW_TRANSFORM_180;    break;
-        case ROTATE_270:  transform = GLFW_TRANSFORM_90;     break;
+        case ROTATE_270: transform = GLFW_TRANSFORM_90;     break;
         default:         transform = GLFW_TRANSFORM_NORMAL; break;
         }
         glfwSetWindowContentTransform(window, transform);
@@ -419,8 +756,7 @@ OffscreenRenderer::SetRotation(Rotation rot)
 void
 OffscreenRenderer::SetRotation(int degrees)
 {
-    // Normalize to valid values
-    degrees = ((degrees % 360) + 360) % 360;  // Handle negative
+    degrees = ((degrees % 360) + 360) % 360;
     
     Rotation rot;
     switch (degrees) {
@@ -429,7 +765,6 @@ OffscreenRenderer::SetRotation(int degrees)
     case 180: rot = ROTATE_180; break;
     case 270: rot = ROTATE_270; break;
     default:
-        // Snap to nearest 90 degrees
         if (degrees < 45)        rot = ROTATE_0;
         else if (degrees < 135)  rot = ROTATE_90;
         else if (degrees < 225)  rot = ROTATE_180;
@@ -438,21 +773,20 @@ OffscreenRenderer::SetRotation(int degrees)
         break;
     }
     
-    SetRotation(rot);  // Use main function for resize logic
+    SetRotation(rot);
 }
 
 void
 OffscreenRenderer::UpdateRotation(int transform)
 {
-    switch (transform)
-    {
+    switch (transform) {
     case GLFW_TRANSFORM_NORMAL:
     case GLFW_TRANSFORM_270:
-        OffscreenRenderer::SetRotation(OffscreenRenderer::ROTATE_90);
+        SetRotation(ROTATE_90);
         break;
     case GLFW_TRANSFORM_180:
     case GLFW_TRANSFORM_90:
-        OffscreenRenderer::SetRotation(OffscreenRenderer::ROTATE_270);
+        SetRotation(ROTATE_270);
         break;
     }
 }
@@ -460,40 +794,26 @@ OffscreenRenderer::UpdateRotation(int transform)
 void
 OffscreenRenderer::FlipRotation(void)
 {
-    // Add 180 degrees: 0<->180, 90<->270
-    // This NEVER requires buffer resize (same orientation)
     switch (ms_rotation) {
     case ROTATE_0:   ms_rotation = ROTATE_180; break;
     case ROTATE_90:  ms_rotation = ROTATE_270; break;
     case ROTATE_180: ms_rotation = ROTATE_0;   break;
     case ROTATE_270: ms_rotation = ROTATE_90;  break;
     }
-    // No resize needed - just UV flip
-}
-
-void
-OffscreenRenderer::SetRenderScale(float scale)
-{
-    if (scale < 0.25f) scale = 0.25f;
-    if (scale > 4.0f) scale = 4.0f;
-    
-    ms_renderScale = scale;
-    
-    // Optionally resize buffers based on scale
-    // int newW = (int)(SCREEN_WIDTH * scale);
-    // int newH = (int)(SCREEN_HEIGHT * scale);
-    // Resize(newW, newH);
 }
 
 void
 OffscreenRenderer::SetEnabled(bool enabled)
 {
     if (ms_inFrame && !enabled) {
-        // Finish current frame first
         EndFrame();
     }
     ms_enabled = enabled;
 }
+
+// =============================================================================
+// Input Coordinate Transform
+// =============================================================================
 
 void
 OffscreenRenderer::TransformInputCoords(float windowX, float windowY,
@@ -505,46 +825,31 @@ OffscreenRenderer::TransformInputCoords(float windowX, float windowY,
         return;
     }
     
-    // Window dimensions (actual pixels on screen)
     float winW = (float)ms_windowWidth;
     float winH = (float)ms_windowHeight;
-    
-    // Game dimensions (logical render size)
     float gameW = (float)ms_renderWidth;
     float gameH = (float)ms_renderHeight;
     
-    // Transform based on rotation
-    // Input is in window coordinates, output is in game coordinates
     float tx = windowX;
     float ty = windowY;
     
     switch (ms_rotation) {
     case ROTATE_0:
-        // No rotation: just scale
         *gameX = tx * gameW / winW;
         *gameY = ty * gameH / winH;
         break;
         
     case ROTATE_90:
-        // Window is portrait, game is landscape rotated 90 CW
-        // Window (0,0) = top-left -> Game (0, gameH)
-        // Window (winW,0) = top-right -> Game (0, 0)
-        // Window (0,winH) = bottom-left -> Game (gameW, gameH)
         *gameX = ty * gameW / winH;
         *gameY = (winW - tx) * gameH / winW;
         break;
         
     case ROTATE_180:
-        // Upside down
         *gameX = (winW - tx) * gameW / winW;
         *gameY = (winH - ty) * gameH / winH;
         break;
         
     case ROTATE_270:
-        // Window is portrait, game is landscape rotated 270 CW (90 CCW)
-        // Window (0,0) = top-left -> Game (gameW, 0)
-        // Window (winW,0) = top-right -> Game (gameW, gameH)
-        // Window (0,winH) = bottom-left -> Game (0, 0)
         *gameX = (winH - ty) * gameW / winH;
         *gameY = tx * gameH / winW;
         break;
