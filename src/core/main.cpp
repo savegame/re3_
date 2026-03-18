@@ -233,11 +233,13 @@ DoRWStuffStartOfFrame_Horizon(int16 TopRed, int16 TopGreen, int16 TopBlue, int16
 #ifdef OFFSCREEN_RENDER
  	// Redirect rendering to offscreen BEFORE camera begin update
 	OffscreenRenderer::BeginFrame();
-#endif
+	CameraSize(Scene.camera, nil, SCREEN_VIEWWINDOW, OffscreenRenderer::GetAspectRatio());
+#else 
 #ifndef ASPECT_RATIO_SCALE
 	CameraSize(Scene.camera, nil, SCREEN_VIEWWINDOW, (CMenuManager::m_PrefsUseWideScreen ? 16.f/9.f : 4.f/3.f));
 #else
 	CameraSize(Scene.camera, nil, SCREEN_VIEWWINDOW, SCREEN_ASPECT_RATIO);
+#endif
 #endif
 	CVisibilityPlugins::SetRenderWareCamera(Scene.camera);
 	RwCameraClear(Scene.camera, &gColourTop, CLEARMODE);
@@ -246,7 +248,10 @@ DoRWStuffStartOfFrame_Horizon(int16 TopRed, int16 TopGreen, int16 TopBlue, int16
 		return false;
 
 	TheCamera.m_viewMatrix.Update();
+
+#ifndef OFFSCREEN_RENDER // do not render background here, do it in Begin3D
 	CClouds::RenderBackground(TopRed, TopGreen, TopBlue, BottomRed, BottomGreen, BottomBlue, Alpha);
+#endif
 
 	return true;
 }
@@ -1410,7 +1415,9 @@ RenderScene(void)
 #endif
 	PUSH_RENDERGROUP("RenderScene");
 	CClouds::Render();
+#ifndef OFFSCREEN_RENDER
 	DoRWRenderHorizon();
+#endif
 	CRenderer::RenderRoads();
 	CCoronas::RenderReflections();
 	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)TRUE);
@@ -1694,6 +1701,10 @@ Idle(void *arg)
 		RwCameraSetFogDistance(Scene.camera, CTimeCycle::GetFogStart());
 #endif
 
+#ifdef OFFSCREEN_RENDER
+		OffscreenRenderer::Begin3D();
+#endif
+
 		tbStartTimer(0, "RenderScene");
 		RenderScene();
 		tbEndTimer("RenderScene");
@@ -1718,6 +1729,10 @@ Idle(void *arg)
 		tbStartTimer(0, "RenderMotionBlur");
 		TheCamera.RenderMotionBlur();
 		tbEndTimer("RenderMotionBlur");
+
+#ifdef OFFSCREEN_RENDER
+		OffscreenRenderer::End3D();
+#endif
 
 		tbStartTimer(0, "Render2dStuff");
 		Render2dStuff();
