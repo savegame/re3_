@@ -16,6 +16,13 @@
 #include "../extras/imgui/backends/imgui_impl_glfw.h"
 #include "../extras/imgui/backends/imgui_impl_opengl3.h"
 
+#include "Vehicle.h"
+#include "Ped.h"
+#include "World.h"
+#include "PlayerPed.h"
+#include "ModelIndices.h"
+#include "Script.h"
+
 #include <math.h>
 
 // Default configuration
@@ -68,10 +75,12 @@ static int AddButton(TouchButton *arr, int &count,
                      eTouchAnchor anchor, float ox, float oy, float w, float h,
                      eTouchActionType atype, int32 acode,
                      uint8 r, uint8 g, uint8 b, uint8 normA, uint8 pressA,
-                     bool round, bool allowLook = false)
+                     bool round, bool allowLook = false,
+                     eTouchVisibility vis = TVIS_ALWAYS)
 {
 	if (count >= TOUCH_MAX_BUTTONS) return -1;
 	TouchButton &btn = arr[count];
+	btn.visibility   = vis;
 	btn.label        = label;
 	btn.layoutFlags  = layout;
 	btn.anchor       = anchor;
@@ -220,16 +229,70 @@ TouchControls::SetupButtons(void)
 		60.0f, 35.0f,
 		TACTION_PAD, TPAD_L1,
 		80, 80, 80, 90, 180,
-		false);
+		false, false,
+		TVIS_HAS_RADIO);
 
 	AddButton(ms_buttons, ms_numButtons,
-		"$",                               // taxi/mission icon
+		"$",                               // taxi/ambulance/police etc mission icon
 		TOUCH_LAYOUT_GAMEPLAY,
 		ANCHOR_BOTTOM_CENTER, 0.0f, 40.0f,
 		55.0f, 55.0f,
 		TACTION_PAD, TPAD_RIGHT_STICK,
 		60, 180, 60, 120, 200,
-		false);
+		false, false,
+		TVIS_TAXI_MISSION);
+}
+
+bool
+TouchControls::IsButtonVisible(const TouchButton &btn)
+{
+	// Layout check first
+	if (!(btn.layoutFlags & ms_currentLayout))
+		return false;
+
+	// Dynamic visibility
+	switch (btn.visibility) {
+	case TVIS_ALWAYS:
+		return true;
+
+	case TVIS_IN_VEHICLE:
+		return FindPlayerVehicle() != nil;
+
+	case TVIS_HAS_RADIO:
+		{
+			CVehicle *veh = FindPlayerVehicle();
+			return veh != nil && !veh->IsBoat();  // boats have no radio in GTA3
+		}
+
+	case TVIS_TAXI_MISSION:
+		{
+			CVehicle *veh = FindPlayerVehicle();
+			if (veh == nil) return false;
+			
+			// Check vehicle type and mission not already active
+			int32 model = veh->GetModelIndex();
+			
+			// Taxi: TAXI, CABBIE, BORGNINE
+			if (model == MI_TAXI || model == MI_CABBIE || model == MI_BORGNINE)
+				return !CTheScripts::IsPlayerOnAMission();
+			
+			// Ambulance
+			if (model == MI_AMBULAN)
+				return !CTheScripts::IsPlayerOnAMission();
+			
+			// Police car (Vigilante)
+			if (model == MI_POLICE || model == MI_ENFORCER || 
+				model == MI_FBICAR || model == MI_RHINO)
+				return !CTheScripts::IsPlayerOnAMission();
+			
+			// Firetruck
+			if (model == MI_FIRETRUCK)
+				return !CTheScripts::IsPlayerOnAMission();
+			
+			return false;
+		}
+	}
+	return true;
 }
 
 // ============================================================
@@ -263,7 +326,8 @@ TouchControls::UpdateLayout(void)
 	// Recompute screen positions for active buttons
 	for (int i = 0; i < ms_numButtons; i++) {
 		TouchButton &btn = ms_buttons[i];
-		if (!(btn.layoutFlags & ms_currentLayout))
+
+		if (!IsButtonVisible(btn))
 			continue;
 
 		float sw = SCREEN_SCALE_X(btn.width);
@@ -510,7 +574,8 @@ TouchControls::HitTestButton(double x, double y)
 {
 	for (int i = 0; i < ms_numButtons; i++) {
 		TouchButton &btn = ms_buttons[i];
-		if (!(btn.layoutFlags & ms_currentLayout))
+
+		if (!IsButtonVisible(btn))
 			continue;
 
 		if (btn.roundVisual) {
@@ -996,7 +1061,9 @@ void TouchControls::Draw(void)
 	// Draw buttons for current Layout
 	for (int i = 0; i < ms_numButtons; i++) {
 		TouchButton &btn = ms_buttons[i];
-		if (!(btn.layoutFlags & ms_currentLayout)) continue;
+
+		if (!IsButtonVisible(btn))
+			continue;
 
 		uint8 alpha = btn.pressed ? btn.pressedAlpha : btn.normalAlpha;
 		ImU32 bgColor = IM_COL32(btn.bgR, btn.bgG, btn.bgB, alpha);
