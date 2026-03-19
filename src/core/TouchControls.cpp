@@ -10,6 +10,11 @@
 #include "Font.h"
 #include "main.h"
 #include "CutsceneMgr.h"
+#include "OffscreenRenderer.h"
+
+#include "../extras/imgui/imgui.h"
+#include "../extras/imgui/backends/imgui_impl_glfw.h"
+#include "../extras/imgui/backends/imgui_impl_opengl3.h"
 
 #include <math.h>
 
@@ -52,6 +57,8 @@ float TouchControls::ms_cachedNearZ = 0.0f;
 float TouchControls::ms_cachedRecipZ = 1.0f;
 bool  TouchControls::ms_renderStateSet = false;
 
+bool TouchControls::ms_imguiInitialized = false;
+
 // ============================================================
 // Helper: add a button to the array
 // ============================================================
@@ -93,16 +100,77 @@ TouchControls::SetupButtons(void)
 	ms_numButtons = 0;
 
 	// ---- MENU layout ----
+	// Back button (Triangle) — top-left
 	AddButton(ms_buttons, ms_numButtons,
-		"<",                                    // label
-		TOUCH_LAYOUT_MENU | TOUCH_LAYOUT_CUTSCENE, // visible in menu + cutscene
-		ANCHOR_TOP_LEFT, 15.0f, 15.0f,         // anchor, offset
-		70.0f, 45.0f,                           // size
-		TACTION_KEY, TKEY_ESC,                  // action: ESC
-		40, 40, 40, 120, 200,                   // colors
-		false);                                 // rectangle
+		"<",
+		TOUCH_LAYOUT_MENU | TOUCH_LAYOUT_CUTSCENE,
+		ANCHOR_TOP_LEFT, 15.0f, 15.0f,
+		70.0f, 45.0f,
+		TACTION_PAD, TPAD_TRIANGLE,        // Triangle = back in menu
+		40, 40, 40, 120, 200,
+		false);
+
+	// Navigation UP — right side
+	AddButton(ms_buttons, ms_numButtons,
+		"^",                               // или "▲"
+		TOUCH_LAYOUT_MENU,
+		ANCHOR_BOTTOM_RIGHT, 30.0f, 180.0f,
+		55.0f, 55.0f,
+		TACTION_PAD, TPAD_DPAD_UP,
+		50, 50, 50, 120, 200,
+		true);                             // round
+
+	// Navigation DOWN — right side
+	AddButton(ms_buttons, ms_numButtons,
+		"v",                               // или "▼"
+		TOUCH_LAYOUT_MENU,
+		ANCHOR_BOTTOM_RIGHT, 30.0f, 100.0f,
+		55.0f, 55.0f,
+		TACTION_PAD, TPAD_DPAD_DOWN,
+		50, 50, 50, 120, 200,
+		true);
+
+	// Value LEFT — left side
+	AddButton(ms_buttons, ms_numButtons,
+		"<",
+		TOUCH_LAYOUT_MENU,
+		ANCHOR_BOTTOM_LEFT, 30.0f, 140.0f,
+		55.0f, 55.0f,
+		TACTION_PAD, TPAD_DPAD_LEFT,
+		50, 50, 50, 120, 200,
+		true);
+
+	// Value RIGHT — left side
+	AddButton(ms_buttons, ms_numButtons,
+		">",
+		TOUCH_LAYOUT_MENU,
+		ANCHOR_BOTTOM_LEFT, 100.0f, 140.0f,
+		55.0f, 55.0f,
+		TACTION_PAD, TPAD_DPAD_RIGHT,
+		50, 50, 50, 120, 200,
+		true);
+
+	// Confirm (Cross) — bottom center-right (optional, if tap doesn't work)
+	AddButton(ms_buttons, ms_numButtons,
+		"OK",
+		TOUCH_LAYOUT_MENU,
+		ANCHOR_BOTTOM_RIGHT, 100.0f, 100.0f,
+		60.0f, 45.0f,
+		TACTION_PAD, TPAD_CROSS,
+		40, 80, 40, 120, 200,
+		false);
 
 	// ---- GAMEPLAY layout ----
+
+	// Pause / Menu button — top-right
+	AddButton(ms_buttons, ms_numButtons,
+		"II",                              // label (pause icon)
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_TOP_LEFT, 15.0f, 15.0f,    // top-right corner
+		50.0f, 50.0f,
+		TACTION_PAD, TPAD_START,           // Start = открыть меню
+		40, 40, 40, 100, 200,
+		false);                            // rectangle
 
 	// Sprint / Cross (A) — bottom-right area
 	AddButton(ms_buttons, ms_numButtons,
@@ -144,25 +212,24 @@ TouchControls::SetupButtons(void)
 		180, 180, 50, 100, 200,
 		true);
 
-	// L1 — top-left shoulder area
+	// L1 — top-center, radio
 	AddButton(ms_buttons, ms_numButtons,
-		"L1",
+		"RADIO",
 		TOUCH_LAYOUT_GAMEPLAY,
-		ANCHOR_TOP_LEFT, 15.0f, 15.0f,
+		ANCHOR_TOP_CENTER, 0.0f, 15.0f,
 		60.0f, 35.0f,
 		TACTION_PAD, TPAD_L1,
 		80, 80, 80, 90, 180,
 		false);
 
-	// R1 — top-right shoulder area
 	AddButton(ms_buttons, ms_numButtons,
-		"R1",
+		"$",                               // taxi/mission icon
 		TOUCH_LAYOUT_GAMEPLAY,
-		ANCHOR_TOP_RIGHT, 15.0f, 15.0f,
-		60.0f, 35.0f,
-		TACTION_PAD, TPAD_R1,
-		80, 80, 80, 90, 180,
-		false, true);
+		ANCHOR_BOTTOM_CENTER, 0.0f, 40.0f,
+		55.0f, 55.0f,
+		TACTION_PAD, TPAD_RIGHT_STICK,
+		60, 180, 60, 120, 200,
+		false);
 }
 
 // ============================================================
@@ -242,6 +309,8 @@ TouchControls::UpdateLayout(void)
 void
 TouchControls::Init(void)
 {
+	if (ms_imguiInitialized) return;
+
 	Reset();
 
 	// Pre-calculate unit circle vertices (only once!)
@@ -253,13 +322,46 @@ TouchControls::Init(void)
 	}
 
 	SetupButtons();
+
+	// Get GLFW window from RE3
+	GLFWwindow *window = glfwGetCurrentContext();
+	if (!window) {
+		fprintf(stderr, "TouchControls: No GLFW context\n");
+		return;
+	}
+
+	// Create ImGui context
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+
+	ImGuiIO &io = ImGui::GetIO();
+	io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+
+	// Scale for mobile DPI
+	float dpiScale = 3.0f;  // TODO: get from glfwGetWindowContentScale
+	io.FontGlobalScale = dpiScale;
+	ImGui::GetStyle().ScaleAllSizes(dpiScale);
+
+	// Init backends — librw already loaded GL functions
+	ImGui_ImplGlfw_InitForOpenGL(window, false);  // false = don't install callbacks
+	ImGui_ImplOpenGL3_Init("#version 100");       // GLES2
+
+	ms_imguiInitialized = true;
+	fprintf(stderr, "TouchControls: ImGui initialized\n");
 }
 
 void
 TouchControls::Shutdown(void)
 {
+	if (!ms_imguiInitialized) return;
 	Reset();
 	ms_numButtons = 0;
+
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+
+	ms_imguiInitialized = false;
 }
 
 void
@@ -852,165 +954,91 @@ TouchControls::InjectPad(int32 padBtn, bool pressed)
 	int16 val = pressed ? 255 : 0;
 	CPad *pad = CPad::GetPad(0);
 	switch (padBtn) {
-	case TPAD_CROSS:      pad->PCTempJoyState.Cross = val; break;
-	case TPAD_SQUARE:     pad->PCTempJoyState.Square = val; break;
-	case TPAD_CIRCLE:     pad->PCTempJoyState.Circle = val; break;
-	case TPAD_TRIANGLE:   pad->PCTempJoyState.Triangle = val; break;
-	case TPAD_L1:         pad->PCTempJoyState.LeftShoulder1 = val; break;
-	case TPAD_R1:         pad->PCTempJoyState.RightShoulder1 = val; break;
-	case TPAD_L2:         pad->PCTempJoyState.LeftShoulder2 = val; break;
-	case TPAD_R2:         pad->PCTempJoyState.RightShoulder2 = val; break;
-	case TPAD_DPAD_UP:    pad->PCTempJoyState.DPadUp = val; break;
-	case TPAD_DPAD_DOWN:  pad->PCTempJoyState.DPadDown = val; break;
-	case TPAD_DPAD_LEFT:  pad->PCTempJoyState.DPadLeft = val; break;
-	case TPAD_DPAD_RIGHT: pad->PCTempJoyState.DPadRight = val; break;
-	case TPAD_START:      pad->PCTempJoyState.Start = val; break;
-	case TPAD_SELECT:     pad->PCTempJoyState.Select = val; break;
+	case TPAD_CROSS:       pad->PCTempJoyState.Cross = val; break;
+	case TPAD_SQUARE:      pad->PCTempJoyState.Square = val; break;
+	case TPAD_CIRCLE:      pad->PCTempJoyState.Circle = val; break;
+	case TPAD_TRIANGLE:    pad->PCTempJoyState.Triangle = val; break;
+	case TPAD_L1:          pad->PCTempJoyState.LeftShoulder1 = val; break;
+	case TPAD_R1:          pad->PCTempJoyState.RightShoulder1 = val; break;
+	case TPAD_L2:          pad->PCTempJoyState.LeftShoulder2 = val; break;
+	case TPAD_R2:          pad->PCTempJoyState.RightShoulder2 = val; break;
+	case TPAD_DPAD_UP:     pad->PCTempJoyState.DPadUp = val; break;
+	case TPAD_DPAD_DOWN:   pad->PCTempJoyState.DPadDown = val; break;
+	case TPAD_DPAD_LEFT:   pad->PCTempJoyState.DPadLeft = val; break;
+	case TPAD_DPAD_RIGHT:  pad->PCTempJoyState.DPadRight = val; break;
+	case TPAD_START:       pad->PCTempJoyState.Start = val; break;
+	case TPAD_SELECT:      pad->PCTempJoyState.Select = val; break;
+	case TPAD_RIGHT_STICK: pad->PCTempJoyState.RightShock = val; break;
+	case TPAD_LEFT_STICK:  pad->PCTempJoyState.LeftShock = val; break;
 	}
 }
 
 // ============================================================
 // Drawing
 // ============================================================
-
-void
-TouchControls::DrawFilledCircle(float cx, float cy, float radius,
-                                     uint8 r, uint8 g, uint8 b, uint8 a)
+void TouchControls::Draw(void)
 {
-	// Center vertex
-	RwIm2DVertexSetScreenX(&ms_circleVerts[0], cx);
-	RwIm2DVertexSetScreenY(&ms_circleVerts[0], cy);
-	RwIm2DVertexSetScreenZ(&ms_circleVerts[0], ms_cachedNearZ);
-	RwIm2DVertexSetRecipCameraZ(&ms_circleVerts[0], ms_cachedRecipZ);
-	RwIm2DVertexSetIntRGBA(&ms_circleVerts[0], r, g, b, a);
-	
-	// Ring vertices using pre-calculated unit circle
-	for (int i = 0; i <= CIRCLE_SEGMENTS; i++) {
-		float px = cx + ms_unitCircleX[i] * radius;
-		float py = cy + ms_unitCircleY[i] * radius;
-		
-		RwIm2DVertexSetScreenX(&ms_circleVerts[i + 1], px);
-		RwIm2DVertexSetScreenY(&ms_circleVerts[i + 1], py);
-		RwIm2DVertexSetScreenZ(&ms_circleVerts[i + 1], ms_cachedNearZ);
-		RwIm2DVertexSetRecipCameraZ(&ms_circleVerts[i + 1], ms_cachedRecipZ);
-		RwIm2DVertexSetIntRGBA(&ms_circleVerts[i + 1], r, g, b, a);
-	}
-	
-	RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, ms_circleVerts, CIRCLE_SEGMENTS + 2);
-}
-
-void
-TouchControls::DrawButton(TouchButton &btn)
-{
-	uint8 alpha = btn.pressed ? btn.pressedAlpha : btn.normalAlpha;
-
-	if (btn.roundVisual) {
-		float cx = btn.screenX + btn.screenW * 0.5f;
-		float cy = btn.screenY + btn.screenH * 0.5f;
-		float r  = btn.screenW * 0.5f;
-		DrawFilledCircle(cx, cy, r, btn.bgR, btn.bgG, btn.bgB, alpha);
-	} else {
-		CSprite2d::DrawRect(
-			CRect(btn.screenX, btn.screenY,
-			      btn.screenX + btn.screenW, btn.screenY + btn.screenH),
-			CRGBA(btn.bgR, btn.bgG, btn.bgB, alpha));
+	if (!ms_enabled) return;
+	if (!ms_imguiInitialized) {
+		Init();  // Lazy init
+		if (!ms_imguiInitialized) return;
 	}
 
-	// Draw label
-	if (btn.label && btn.label[0]) {
-		CFont::SetFontStyle(FONT_HEADING);
-		CFont::SetScale(SCREEN_SCALE_X(0.55f), SCREEN_SCALE_Y(0.9f));
-		CFont::SetColor(CRGBA(255, 255, 255, alpha));
-		CFont::SetDropShadowPosition(0);
-		CFont::SetCentreOn();
-		CFont::SetCentreSize(btn.screenW + SCREEN_SCALE_X(40.0f));
-		CFont::SetPropOn();
-		CFont::SetBackgroundOff();
-		CFont::SetWrapx(SCREEN_WIDTH);
-		CFont::SetRightJustifyOff();
-
-		wchar wlabel[8];
-		int j = 0;
-		for (const char *p = btn.label; *p && j < 7; p++, j++)
-			wlabel[j] = (wchar)*p;
-		wlabel[j] = 0;
-
-		CFont::PrintString(
-			btn.screenX + btn.screenW * 0.5f,
-			btn.screenY + btn.screenH * 0.2f,
-			wlabel);
-	}
-}
-
-void
-TouchControls::Draw(void)
-{
-	if (!ms_enabled)
-		return;
 	UpdateLayout();
 
-	BeginDraw();  // Set render states once
+	// Start ImGui frame
+	ImGui_ImplOpenGL3_NewFrame();
+	ImGui_ImplGlfw_NewFrame(OffscreenRenderer::GetRenderWidth(), OffscreenRenderer::GetRenderHeight());
+	ImGui::NewFrame();
 
-	// Draw active buttons for current layout
+	ImDrawList *drawList = ImGui::GetBackgroundDrawList();
+
+	// Draw buttons for current Layout
 	for (int i = 0; i < ms_numButtons; i++) {
 		TouchButton &btn = ms_buttons[i];
-		if (btn.layoutFlags & ms_currentLayout)
-			DrawButton(btn);
-	}
+		if (!(btn.layoutFlags & ms_currentLayout)) continue;
 
-	// Draw left stick (gameplay only)
-	if (ms_currentLayout == TOUCH_LAYOUT_GAMEPLAY) {
-		if (ms_stickVisual.visible) {
-			float baseR  = ms_stickVisual.radius;
-			float thumbR = SCREEN_SCALE_X(25.0f);
+		uint8 alpha = btn.pressed ? btn.pressedAlpha : btn.normalAlpha;
+		ImU32 bgColor = IM_COL32(btn.bgR, btn.bgG, btn.bgB, alpha);
+		ImU32 textColor = IM_COL32(255, 255, 255, alpha);
 
-			DrawFilledCircle(
-				ms_stickVisual.baseX, ms_stickVisual.baseY,
-				baseR,
-				255, 255, 255, (uint8)ms_stickBaseAlpha);
+		ImVec2 pos(btn.screenX, btn.screenY);
+		ImVec2 size(btn.screenW, btn.screenH);
 
-			DrawFilledCircle(
-				ms_stickVisual.thumbX, ms_stickVisual.thumbY,
-				thumbR,
-				255, 255, 255, (uint8)ms_stickThumbAlpha);
+		if (btn.roundVisual) {
+			float cx = pos.x + size.x * 0.5f;
+			float cy = pos.y + size.y * 0.5f;
+			float r = size.x * 0.5f;
+			drawList->AddCircleFilled(ImVec2(cx, cy), r, bgColor, 32);
 		} else {
-			// Idle hint
-			float hintX = SCREEN_SCALE_X(120.0f);
-			float hintY = SCREEN_HEIGHT - SCREEN_SCALE_Y(120.0f);
-			float hintR = SCREEN_SCALE_X(40.0f);
-			DrawFilledCircle(hintX, hintY, hintR, 255, 255, 255, 30);
+			drawList->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), bgColor, 8.0f);
+		}
+
+		// Label
+		if (btn.label && btn.label[0]) {
+			ImVec2 textSize = ImGui::CalcTextSize(btn.label);
+			float tx = pos.x + (size.x - textSize.x) * 0.5f;
+			float ty = pos.y + (size.y - textSize.y) * 0.5f;
+			drawList->AddText(ImVec2(tx, ty), textColor, btn.label);
 		}
 	}
 
-	EndDraw();  // Restore render states
-}
-
-void
-TouchControls::BeginDraw(void)
-{
-	// Cache Z values once per frame
-	ms_cachedNearZ = RwIm2DGetNearScreenZ();
-	ms_cachedRecipZ = 1.0f / RwCameraGetNearClipPlane(Scene.camera);
-	
-	// Set render states ONCE for all circles
-	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
-	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
-	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
-	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
-	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
-	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
-	
-	ms_renderStateSet = true;
-}
-
-void
-TouchControls::EndDraw(void)
-{
-	if (ms_renderStateSet) {
-		RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
-		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
-		ms_renderStateSet = false;
+	// Draw stick (gameplay only)
+	if (ms_currentLayout == TOUCH_LAYOUT_GAMEPLAY && ms_stickVisual.visible) {
+		ImU32 baseCol = IM_COL32(255, 255, 255, (uint8)ms_stickBaseAlpha);
+		ImU32 thumbCol = IM_COL32(255, 255, 255, (uint8)ms_stickThumbAlpha);
+		
+		drawList->AddCircleFilled(
+			ImVec2(ms_stickVisual.baseX, ms_stickVisual.baseY),
+			ms_stickVisual.radius, baseCol, 32);
+		drawList->AddCircleFilled(
+			ImVec2(ms_stickVisual.thumbX, ms_stickVisual.thumbY),
+			25.0f, thumbCol, 32);
 	}
+
+	ImGui::Render();
+
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 #endif // TOUCH_CONTROLS

@@ -746,7 +746,7 @@ static void ImGui_ImplGlfw_UpdateGamepads()
     #undef MAP_ANALOG
 }
 
-void ImGui_ImplGlfw_NewFrame()
+void ImGui_ImplGlfw_NewFrame(int in_w, int in_h)
 {
     ImGuiIO& io = ImGui::GetIO();
     ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData();
@@ -755,8 +755,15 @@ void ImGui_ImplGlfw_NewFrame()
     // Setup display size (every frame to accommodate for window resizing)
     int w, h;
     int display_w, display_h;
-    glfwGetWindowSize(bd->Window, &w, &h);
-    glfwGetFramebufferSize(bd->Window, &display_w, &display_h);
+    if (in_w != 0 && in_h != 0) {
+        w = in_w;
+        h = in_h;
+        display_w = in_w;
+        display_h = in_h;
+    } else {
+        glfwGetWindowSize(bd->Window, &w, &h);
+        glfwGetFramebufferSize(bd->Window, &display_w, &display_h);
+    }
     io.DisplaySize = ImVec2((float)w, (float)h);
     if (w > 0 && h > 0)
         io.DisplayFramebufferScale = ImVec2((float)display_w / (float)w, (float)display_h / (float)h);

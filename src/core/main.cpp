@@ -1504,9 +1504,6 @@ Render2dStuff(void)
 	COcclusion::Render();
 #endif
 
-#ifdef TOUCH_CONTROLS
-	TouchControls::Draw();
-#endif
 #ifdef DEBUGMENU
 	DebugMenuRender();
 #endif
