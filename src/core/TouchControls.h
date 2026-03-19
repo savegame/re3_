@@ -84,6 +84,7 @@ enum eTouchVisibility
 	TVIS_IN_VEHICLE,        // only in any vehicle
 	TVIS_TAXI_MISSION,      // taxi/ambulance/police mission available
 	TVIS_HAS_RADIO,         // vehicle has radio
+	TVIS_ON_FOOT,           // without any vehicle
 };
 
 // ---- Touch button definition ----

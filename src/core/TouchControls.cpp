@@ -205,17 +205,18 @@ TouchControls::SetupButtons(void)
 	AddButton(ms_buttons, ms_numButtons,
 		"B",
 		TOUCH_LAYOUT_GAMEPLAY,
-		ANCHOR_BOTTOM_RIGHT, 90.0f, 190.0f,
+		ANCHOR_BOTTOM_RIGHT, 90.0f, 160.0f,
 		55.0f, 55.0f,
 		TACTION_PAD, TPAD_CIRCLE,
 		180, 50, 50, 100, 200,
-		true, true);
+		true, true,
+		TVIS_ON_FOOT);
 
 	// Enter-vehicle / Triangle (Y) — above the cluster
 	AddButton(ms_buttons, ms_numButtons,
 		"Y",
 		TOUCH_LAYOUT_GAMEPLAY,
-		ANCHOR_BOTTOM_RIGHT, 30.0f, 250.0f,
+		ANCHOR_BOTTOM_RIGHT, 30.0f, 220.0f,
 		55.0f, 55.0f,
 		TACTION_PAD, TPAD_TRIANGLE,
 		180, 180, 50, 100, 200,
@@ -233,14 +234,25 @@ TouchControls::SetupButtons(void)
 		TVIS_HAS_RADIO);
 
 	AddButton(ms_buttons, ms_numButtons,
-		"$",                               // taxi/ambulance/police etc mission icon
+		"Mission",                        // taxi/ambulance/police etc mission icon
 		TOUCH_LAYOUT_GAMEPLAY,
-		ANCHOR_BOTTOM_CENTER, 0.0f, 40.0f,
-		55.0f, 55.0f,
+		ANCHOR_BOTTOM_CENTER, 0.0f, 30.0f,
+		55.0f, 35.0f,
 		TACTION_PAD, TPAD_RIGHT_STICK,
 		60, 180, 60, 120, 200,
 		false, false,
 		TVIS_TAXI_MISSION);
+
+	// Horn — only in vehicle
+	AddButton(ms_buttons, ms_numButtons,
+		"!",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_BOTTOM_RIGHT, 30.0f, 285.0f,
+		50.0f, 50.0f,
+		TACTION_PAD, TPAD_LEFT_STICK,
+		80, 80, 80, 100, 200,
+		true, false,
+		TVIS_IN_VEHICLE);
 }
 
 bool
@@ -291,6 +303,8 @@ TouchControls::IsButtonVisible(const TouchButton &btn)
 			
 			return false;
 		}
+	case TVIS_ON_FOOT:
+		return FindPlayerVehicle() == nil;
 	}
 	return true;
 }
