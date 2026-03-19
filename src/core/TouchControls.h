@@ -77,6 +77,15 @@ enum eTouchAnchor
 	ANCHOR_BOTTOM_CENTER,
 };
 
+// ---- Touch Controls visibility mode
+enum eTouchVisibility
+{
+	TVIS_ALWAYS = 0,        // always visible in layout
+	TVIS_IN_VEHICLE,        // only in any vehicle
+	TVIS_TAXI_MISSION,      // taxi/ambulance/police mission available
+	TVIS_HAS_RADIO,         // vehicle has radio
+};
+
 // ---- Touch button definition ----
 struct TouchButton
 {
@@ -112,6 +121,7 @@ struct TouchButton
 	bool  consumed;
 	bool  releaseQueued;
 	int   touchIndex;
+	eTouchVisibility visibility;  // dynamic visibility condition
 
 	void ClearState(void) {
 		pressed = false;
@@ -212,6 +222,7 @@ private:
 
 	// Setup & layout
 	static void SetupButtons(void);
+	static bool IsButtonVisible(const TouchButton &btn);
 	static void UpdateLayout(void);
 	static uint32 DetectLayout(void);
 
