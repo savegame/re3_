@@ -222,6 +222,28 @@ TouchControls::SetupButtons(void)
 		180, 180, 50, 100, 200,
 		true);
 
+	// Weapon cycle left (L2) — top center, left side
+	AddButton(ms_buttons, ms_numButtons,
+		"<<",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_TOP_CENTER, -60.0f, 15.0f,
+		50.0f, 35.0f,
+		TACTION_PAD, TPAD_L2,
+		60, 20, 20, 90, 180,
+		false, false,
+		TVIS_ON_FOOT);
+
+	// Weapon cycle right (R2) — top center, right side
+	AddButton(ms_buttons, ms_numButtons,
+		">>",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_TOP_CENTER, 60.0f, 15.0f,
+		50.0f, 35.0f,
+		TACTION_PAD, TPAD_R2,
+		60, 20, 20, 90, 180,
+		false, false,
+		TVIS_ON_FOOT);
+
 	// L1 — top-center, radio
 	AddButton(ms_buttons, ms_numButtons,
 		"RADIO",
@@ -233,11 +255,11 @@ TouchControls::SetupButtons(void)
 		false, false,
 		TVIS_HAS_RADIO);
 
-	AddButton(ms_buttons, ms_numButtons,
-		"Mission",                        // taxi/ambulance/police etc mission icon
+	AddButton(ms_buttons, ms_numButtons, // and it look back in on foot 
+		"Mission",                        // taxi/ambulance/police etc mission icon 
 		TOUCH_LAYOUT_GAMEPLAY,
 		ANCHOR_BOTTOM_CENTER, 0.0f, 30.0f,
-		55.0f, 35.0f,
+		65.0f, 35.0f,
 		TACTION_PAD, TPAD_RIGHT_STICK,
 		60, 180, 60, 120, 200,
 		false, false,
@@ -250,7 +272,7 @@ TouchControls::SetupButtons(void)
 		ANCHOR_BOTTOM_RIGHT, 30.0f, 285.0f,
 		50.0f, 50.0f,
 		TACTION_PAD, TPAD_LEFT_STICK,
-		80, 80, 80, 100, 200,
+		20, 20, 80, 100, 200,
 		true, false,
 		TVIS_IN_VEHICLE);
 }
