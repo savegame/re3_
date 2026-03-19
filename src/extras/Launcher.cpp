@@ -461,6 +461,15 @@ Launcher::Run()
 
 	// Main loop
 	while (!glfwWindowShouldClose(window)) {
+		// Check iconified state
+		int iconified = glfwGetWindowAttrib(window, GLFW_ICONIFIED);
+		
+		if (iconified) {
+			// Don't render when minimized — just wait for events
+			glfwWaitEvents();
+			continue;
+		}
+		
 		glfwPollEvents();
 
 		// TODO: ImGui frame here
