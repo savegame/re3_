@@ -46,6 +46,8 @@ enum eTouchPadButton
 	TPAD_DPAD_RIGHT,
 	TPAD_START,
 	TPAD_SELECT,
+	TPAD_LEFT_STICK,
+	TPAD_RIGHT_STICK,
 };
 
 // ---- Key IDs (for TACTION_KEY) ----
@@ -222,11 +224,6 @@ private:
 	static TouchPoint* FindTouchByIndex(int touchIndex);
 	static TouchPoint* FindFreeTouchSlot(void);
 
-	// Drawing helpers
-	static void DrawButton(TouchButton &btn);
-	static void DrawFilledCircle(float cx, float cy, float radius, int segments,
-	                              uint8 r, uint8 g, uint8 b, uint8 a);
-
 	// Injection helpers
 	static void InjectKey(int32 keyID, bool pressed);
 	static void InjectPad(int32 padBtn, bool pressed);
@@ -247,12 +244,8 @@ private:
 	static float ms_cachedNearZ;
 	static float ms_cachedRecipZ;
 	static bool  ms_renderStateSet;
-	
-	// Helper functions for batched drawing
-	static void BeginDraw(void);
-	static void EndDraw(void);
-	static void DrawFilledCircle(float cx, float cy, float radius,
-	                             uint8 r, uint8 g, uint8 b, uint8 a);
+
+	static bool ms_imguiInitialized;
 };
 
 #endif // TOUCH_CONTROLS

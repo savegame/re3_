@@ -24,6 +24,7 @@
 #include "Timecycle.h"
 #include "Weather.h"
 #include "ZoneCull.h"
+#include "TouchControls.h"
 // =============================================================================
 // Static member initialization
 // =============================================================================
@@ -393,6 +394,10 @@ OffscreenRenderer::BeginFrame(void)
 void
 OffscreenRenderer::EndFrame(void)
 {
+#ifdef TOUCH_CONTROLS
+    TouchControls::Draw();
+#endif
+
     if (!ms_initialized || !ms_enabled || !ms_inFrame)
         return;
     

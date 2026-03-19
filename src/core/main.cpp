@@ -1542,9 +1542,6 @@ Render2dStuff(void)
 	CPad::PrintErrorMessage();
 	CFont::DrawFonts();
 
-#ifdef TOUCH_CONTROLS
-	TouchControls::Draw();
-#endif
 #ifdef DEBUGMENU
 	DebugMenuRender();
 #endif
