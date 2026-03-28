@@ -473,4 +473,79 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 	POP_RENDERGROUP();
 }
 
+#ifdef OFFSCREEN_RENDER
+void
+CPostFX::EnsureShadersLoaded(RwCamera *cam)
+{
+    if(pFrontBuffer == nil)
+        Open(cam);
+}
+
+void
+CPostFX::SetupBlitShader(int32 r, int32 g, int32 b, int32 a)
+{
+    if(EffectSwitch == POSTFX_OFF || EffectSwitch == POSTFX_SIMPLE)
+        return;
+    
+    // Skip shader if motion blur is on (uses different rendering)
+    if(EffectSwitch == POSTFX_NORMAL && MotionBlurOn)
+        return;
+    
+#ifdef RW_OPENGL
+#define C1 0,002604166666666667
+    if(EffectSwitch == POSTFX_MOBILE){
+        if(!contrast) return;
+        float mult[3], add[3];
+        mult[0] = (r-64)/384.0f + 1.14f;
+        mult[1] = (g-64)/384.0f + 1.14f;
+        mult[2] = (b-64)/384.0f + 1.14f;
+        add[0] = r/1536.f;
+        add[1] = g/1536.f;
+        add[2] = b/1536.f;
+        rw::gl3::im2dOverrideShader = contrast;
+        contrast->use();
+        glUniform3fv(contrast->uniformLocations[u_contrastMult], 1, mult);
+        glUniform3fv(contrast->uniformLocations[u_contrastAdd], 1, add);
+    }else if(EffectSwitch == POSTFX_NORMAL){
+        if(!colourFilterIII) return;
+        float f = Intensity;
+        float blurcolors[4];
+        blurcolors[0] = r / 255.0f;
+        blurcolors[1] = g / 255.0f;
+        blurcolors[2] = b / 255.0f;
+        blurcolors[3] = a * f / 255.0f;
+        rw::gl3::im2dOverrideShader = colourFilterIII;
+        colourFilterIII->use();
+        glUniform4fv(colourFilterIII->uniformLocations[u_blurcolor], 1, blurcolors);
+    }
+#endif
+}
+
+void
+CPostFX::ResetBlitShader(void)
+{
+#ifdef RW_OPENGL
+    rw::gl3::im2dOverrideShader = nil;
+#endif
+}
+
+bool
+CPostFX::GetSimpleTint(int32 r, int32 g, int32 b, int32 a,
+                       uint8 *outR, uint8 *outG, uint8 *outB, uint8 *outA)
+{
+    if(EffectSwitch != POSTFX_SIMPLE)
+        return false;
+    
+    float strength = (a / 255.0f) * 0.25f;
+    
+    // Lerp: white * (1 - strength) + color * strength
+    *outR = (uint8)(255.0f * (1.0f - strength) + r * strength);
+    *outG = (uint8)(255.0f * (1.0f - strength) + g * strength);
+    *outB = (uint8)(255.0f * (1.0f - strength) + b * strength);
+    *outA = 255;
+    
+    return true;
+}
+#endif // OFFSCREEN_RENDER
+
 #endif

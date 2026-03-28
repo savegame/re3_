@@ -11,6 +11,8 @@
 
 #include "common.h"
 #include "main.h"
+#include "postfx.h"
+#include "MBlur.h"
 #include "Camera.h"
 #include "Draw.h"
 #include "RwHelper.h"
@@ -517,22 +519,69 @@ OffscreenRenderer::Blit3DToUI(void)
     
     if (!RwCameraBeginUpdate(Scene.camera))
         return;
-    
+
+#ifdef EXTENDED_COLOURFILTER
+    // Ensure shaders loaded
+    CPostFX::EnsureShadersLoaded(Scene.camera);
+#endif
+
     // Set render states
     RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
     RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
-    RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
-    RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
-    RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
     RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
     RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
     RwRenderStateSet(rwRENDERSTATETEXTURERASTER, src);
     RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
     RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
+
+#ifdef EXTENDED_COLOURFILTER
+    // Check for SIMPLE mode tint
+    uint8 tintR, tintG, tintB, tintA;
+    bool useSimpleTint = CPostFX::GetSimpleTint(
+        TheCamera.m_BlurRed, TheCamera.m_BlurGreen,
+        TheCamera.m_BlurBlue, TheCamera.m_motionBlur,
+        &tintR, &tintG, &tintB, &tintA);
     
+    if(useSimpleTint){
+        // Apply tint via vertex colors and alpha blend
+        RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+        RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+        RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+        
+        // Tint vertices
+        for(int i = 0; i < 4; i++)
+            RwIm2DVertexSetIntRGBA(&ms_3dBlitVerts[i], tintR, tintG, tintB, tintA);
+    }else{
+        RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+        RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+        RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+        
+        // Restore white vertices
+        for(int i = 0; i < 4; i++)
+            RwIm2DVertexSetIntRGBA(&ms_3dBlitVerts[i], 255, 255, 255, 255);
+        
+        // Apply shader effect
+        CPostFX::SetupBlitShader(
+            TheCamera.m_BlurRed,
+            TheCamera.m_BlurGreen, 
+            TheCamera.m_BlurBlue,
+            TheCamera.m_motionBlur
+        );
+    }
+#else
+    RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+    RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
+    RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
+#endif
+
     // Draw cached quad
     RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, ms_3dBlitVerts, 4, ms_3dBlitIndices, 6);
-    
+
+#ifdef EXTENDED_COLOURFILTER
+    // Apply PostFX shader during blit
+    CPostFX::ResetBlitShader();
+#endif
+
     // Restore states
     RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
     RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);

@@ -31,6 +31,16 @@ public:
 	static bool NeedFrontBuffer(int32 type);
 	static void GetBackBuffer(RwCamera *cam);
 	static bool UseBlurColours(void) { return EffectSwitch != POSTFX_SIMPLE; }
+#ifdef OFFSCREEN_RENDER
+	// Setup shader for external blit (OffscreenRenderer)
+	static void SetupBlitShader(int32 r, int32 g, int32 b, int32 a);
+	static void ResetBlitShader(void);
+	static void EnsureShadersLoaded(RwCamera *cam);
+
+	// Get vertex color tint for POSTFX_SIMPLE mode
+	static bool GetSimpleTint(int32 r, int32 g, int32 b, int32 a,
+	                          uint8 *outR, uint8 *outG, uint8 *outB, uint8 *outA);
+#endif
 };
 
 #endif

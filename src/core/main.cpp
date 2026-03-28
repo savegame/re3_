@@ -1718,14 +1718,18 @@ Idle(void *arg)
 		        TheCamera.SetMotionBlurAlpha(150);
 
 #ifdef SCREEN_DROPLETS
+#ifndef OFFSCREEN_RENDER
 		CPostFX::GetBackBuffer(Scene.camera);
+#endif
 		ScreenDroplets::Process();
 		ScreenDroplets::Render();
 #endif
 
+#ifndef OFFSCREEN_RENDER
 		tbStartTimer(0, "RenderMotionBlur");
 		TheCamera.RenderMotionBlur();
 		tbEndTimer("RenderMotionBlur");
+#endif 
 
 #ifdef OFFSCREEN_RENDER
 		OffscreenRenderer::End3D();
@@ -1735,10 +1739,14 @@ Idle(void *arg)
 		Render2dStuff();
 		tbEndTimer("Render2dStuff");
 	}else{
+#ifdef OFFSCREEN_RENDER
+		CameraSize(Scene.camera, nil, SCREEN_VIEWWINDOW, OffscreenRenderer::GetAspectRatio());
+#else
 #ifdef ASPECT_RATIO_SCALE
 		CameraSize(Scene.camera, nil, SCREEN_VIEWWINDOW, SCREEN_ASPECT_RATIO);
 #else
 		CameraSize(Scene.camera, nil, SCREEN_VIEWWINDOW, DEFAULT_ASPECT_RATIO);
+#endif
 #endif
 		CVisibilityPlugins::SetRenderWareCamera(Scene.camera);
 		RwCameraClear(Scene.camera, &gColourTop, CLEARMODE);
