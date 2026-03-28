@@ -184,6 +184,10 @@ public:
 	static bool IsActive(void) { return ms_enabled; }
 	static void SetEnabled(bool enabled) { ms_enabled = enabled; }
 
+	// Debug overlay
+	static bool ms_showDebugOverlay;
+	static void DrawDebugOverlay(void);
+
 	// Configuration
 	static float ms_stickRadius;
 	static float ms_stickDeadzone;
