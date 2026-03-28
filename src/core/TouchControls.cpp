@@ -23,6 +23,11 @@
 #include "ModelIndices.h"
 #include "Script.h"
 
+#include "Timer.h"
+#ifdef EXTENDED_COLOURFILTER
+#include "postfx.h"
+#endif
+
 #include <math.h>
 
 // Default configuration
@@ -65,6 +70,7 @@ float TouchControls::ms_cachedRecipZ = 1.0f;
 bool  TouchControls::ms_renderStateSet = false;
 
 bool TouchControls::ms_imguiInitialized = false;
+bool TouchControls::ms_showDebugOverlay = true;
 
 // ============================================================
 // Helper: add a button to the array
@@ -575,6 +581,70 @@ TouchControls::UpdatePhysicalScale(GLFWwindow *window)
 	ms_pixelAspect = (SCREEN_SCALE_X(1.0f) > 0.0001f)
 		? SCREEN_SCALE_Y(1.0f) / SCREEN_SCALE_X(1.0f)
 		: 1.0f;
+}
+
+void TouchControls::DrawDebugOverlay(void)
+{
+	if (!ms_showDebugOverlay)
+		return;
+
+	// FPS calculation
+	static float fps = 0.0f;
+	static float fpsTimer = 0.0f;
+	static int frameCount = 0;
+
+	frameCount++;
+	fpsTimer += CTimer::GetTimeStepNonClippedInSeconds();
+
+	if (fpsTimer >= 0.5f) {
+		fps = frameCount / fpsTimer;
+		frameCount = 0;
+		fpsTimer = 0.0f;
+	}
+
+	// Window setup
+	ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
+	ImGui::SetNextWindowBgAlpha(0.6f);
+	ImGui::Begin("##Debug", nullptr, 
+		ImGuiWindowFlags_NoTitleBar |
+		ImGuiWindowFlags_NoResize |
+		ImGuiWindowFlags_AlwaysAutoResize |
+		ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_NoSavedSettings |
+		ImGuiWindowFlags_NoFocusOnAppearing |
+		ImGuiWindowFlags_NoNav |
+		ImGuiWindowFlags_NoInputs);
+
+	// FPS with color coding
+	ImVec4 fpsColor;
+	if (fps >= 30.0f)
+		fpsColor = ImVec4(0.2f, 1.0f, 0.2f, 1.0f);
+	else if (fps >= 20.0f)
+		fpsColor = ImVec4(1.0f, 1.0f, 0.2f, 1.0f);
+	else
+		fpsColor = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+
+	ImGui::TextColored(fpsColor, "FPS: %.1f", fps);
+
+#ifdef EXTENDED_COLOURFILTER
+	const char *fxName = "?";
+	switch(CPostFX::EffectSwitch) {
+		case CPostFX::POSTFX_OFF:    fxName = "OFF";    break;
+		case CPostFX::POSTFX_SIMPLE: fxName = "Simple"; break;
+		case CPostFX::POSTFX_NORMAL: fxName = "Normal"; break;
+		case CPostFX::POSTFX_MOBILE: fxName = "Mobile"; break;
+	}
+	ImGui::Text("FX: %s", fxName);
+#endif
+
+#ifdef OFFSCREEN_RENDER
+	ImGui::Text("3D: %dx%d (%.0f%%)", 
+		OffscreenRenderer::Get3DWidth(),
+		OffscreenRenderer::Get3DHeight(),
+		OffscreenRenderer::Get3DResolution() * 100.0f);
+#endif
+
+	ImGui::End();
 }
 
 // ============================================================
@@ -1091,6 +1161,8 @@ void TouchControls::Draw(void)
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame(OffscreenRenderer::GetRenderWidth(), OffscreenRenderer::GetRenderHeight());
 	ImGui::NewFrame();
+
+	DrawDebugOverlay();
 
 	ImDrawList *drawList = ImGui::GetBackgroundDrawList();
 
