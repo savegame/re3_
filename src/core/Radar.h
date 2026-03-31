@@ -88,6 +88,9 @@ struct sRadarTrace
 };
 VALIDATE_SIZE(sRadarTrace, 0x30);
 
+#ifdef AURORAOS
+#define RADAR_TOP (40.0f)
+#endif
 // Values for screen space
 #define RADAR_LEFT (40.0f)
 #ifdef PS2_HUD

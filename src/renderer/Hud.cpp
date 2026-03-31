@@ -1062,7 +1062,11 @@ void CHud::Draw()
 		if (m_ItemToFlash == ITEM_RADAR && FRAMECOUNTER & 8 || m_ItemToFlash != ITEM_RADAR) {
 			CRadar::DrawMap();
 			CRect rect(0.0f, 0.0f, SCREEN_SCALE_X(RADAR_WIDTH), SCREEN_SCALE_Y(RADAR_HEIGHT));
+#ifdef AURORAOS
+			rect.Translate(SCREEN_SCALE_X_FIX(RADAR_LEFT), SCREEN_SCALE_FROM_TOP(RADAR_TOP));
+#else
 			rect.Translate(SCREEN_SCALE_X_FIX(RADAR_LEFT), SCREEN_SCALE_FROM_BOTTOM(RADAR_BOTTOM + RADAR_HEIGHT));
+#endif
 
 #ifdef PS2_HUD
 	#ifdef FIX_BUGS
