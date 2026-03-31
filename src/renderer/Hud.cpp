@@ -1066,9 +1066,11 @@ void CHud::Draw()
 			CRadar::DrawMap();
 			if (FrontEndMenuManager.m_PrefsRadarMode != 1) {
 				CRect rect(0.0f, 0.0f, SCREEN_SCALE_X(RADAR_WIDTH), SCREEN_SCALE_Y(RADAR_HEIGHT));
-				
+#ifdef AURORAOS
+				rect.Translate(SCREEN_SCALE_X_FIX(RADAR_LEFT), SCREEN_SCALE_FROM_TOP(RADAR_TOP));
+#else
 				rect.Translate(SCREEN_SCALE_X_FIX(RADAR_LEFT), SCREEN_SCALE_FROM_BOTTOM(RADAR_BOTTOM + RADAR_HEIGHT));
-
+#endif
 #ifdef FIX_BUGS
 				rect.Grow(SCREEN_SCALE_X(6.0f), SCREEN_SCALE_X(6.0f), SCREEN_SCALE_Y(6.0f), SCREEN_SCALE_Y(6.0f));
 #else

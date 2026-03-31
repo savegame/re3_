@@ -157,6 +157,9 @@ struct sRadarTraceSave
 };
 #pragma pack(pop)
 
+#ifdef AURORAOS
+#define RADAR_TOP (40.0f)
+#endif
 // Values for screen space
 #define RADAR_LEFT (40.0f)
 #define RADAR_BOTTOM (40.0f)
