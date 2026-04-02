@@ -1419,7 +1419,8 @@ RenderScene(void)
 	DoRWRenderHorizon();
 #endif
 	CRenderer::RenderRoads();
-	CCoronas::RenderReflections();
+	if (CustomPipes::EnvMapEnabled)
+		CCoronas::RenderReflections();
 	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)TRUE);
 	CRenderer::RenderEverythingBarRoads();
 	CRenderer::RenderBoats();
@@ -1707,7 +1708,8 @@ Idle(void *arg)
 		tbEndTimer("RenderScene");
 
 #ifdef EXTENDED_PIPELINES
-		CustomPipes::EnvMapRender();
+		if (CustomPipes::EnvMapEnabled)
+			CustomPipes::EnvMapRender();
 #endif
 
 		RenderDebugShit();

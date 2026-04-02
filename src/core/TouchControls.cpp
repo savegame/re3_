@@ -12,6 +12,7 @@
 #include "CutsceneMgr.h"
 #include "OffscreenRenderer.h"
 
+#include "../extras/custompipes.h"
 #include "../extras/imgui/imgui.h"
 #include "../extras/imgui/backends/imgui_impl_glfw.h"
 #include "../extras/imgui/backends/imgui_impl_opengl3.h"
@@ -28,7 +29,10 @@
 #include "postfx.h"
 #endif
 
+#include <string>
 #include <math.h>
+
+static int activeTouch = -1; // For ImGui
 
 // Default configuration
 float TouchControls::ms_stickRadius     = 80.0f;   // game pixels
@@ -70,8 +74,23 @@ float TouchControls::ms_cachedRecipZ = 1.0f;
 bool  TouchControls::ms_renderStateSet = false;
 
 bool TouchControls::ms_imguiInitialized = false;
-bool TouchControls::ms_showDebugOverlay = true;
+bool TouchControls::ms_showSettings = false;
 
+TouchControls::DebugOverlaySettings TouchControls::ms_debugSettings = {
+    false,   // enabled
+    true,   // showFPS
+    false,  // showBufferSize
+    false   // showColorFilter
+};
+
+static std::string GetConfigPath()
+{
+	const char *home = getenv("HOME");
+	if (home) {
+		return std::string(home) + "/.config/ru.sashikknox/re3/settings.ini";
+	}
+	return "./settings.ini";
+}
 // ============================================================
 // Helper: add a button to the array
 // ============================================================
@@ -114,11 +133,32 @@ TouchControls::SetupButtons(void)
 {
 	ms_numButtons = 0;
 
+	// Settings button (gear icon) — top right, always visible
+	AddButton(ms_buttons, ms_numButtons,
+		"@",  // "⚙"
+		TOUCH_LAYOUT_GAMEPLAY | TOUCH_LAYOUT_MENU,
+		ANCHOR_TOP_RIGHT, 60.0f, 15.0f,
+		40.0f, 40.0f,
+		TACTION_SETTINGS, 0,  // новый action type
+		80, 80, 80, 100, 200,
+		false, false,
+		TVIS_ALWAYS);
+
+	// ---- Cut SCenes Layout
+	AddButton(ms_buttons, ms_numButtons,
+		"SKIP SCENE",
+		TOUCH_LAYOUT_CUTSCENE,
+		ANCHOR_TOP_CENTER, 0.0f, 15.0f,
+		140.0f, 45.0f,
+		TACTION_PAD, TPAD_CROSS,        // Triangle = back in menu
+		40, 40, 40, 120, 200,
+		false);
+
 	// ---- MENU layout ----
 	// Back button (Triangle) — top-left
 	AddButton(ms_buttons, ms_numButtons,
 		"<",
-		TOUCH_LAYOUT_MENU | TOUCH_LAYOUT_CUTSCENE,
+		TOUCH_LAYOUT_MENU,
 		ANCHOR_TOP_LEFT, 15.0f, 15.0f,
 		70.0f, 45.0f,
 		TACTION_PAD, TPAD_TRIANGLE,        // Triangle = back in menu
@@ -418,6 +458,7 @@ TouchControls::Init(void)
 	if (ms_imguiInitialized) return;
 
 	Reset();
+	LoadSettings();
 
 	// Pre-calculate unit circle vertices (only once!)
 	float angleStep = 2.0f * 3.14159265f / (float)CIRCLE_SEGMENTS;
@@ -585,7 +626,7 @@ TouchControls::UpdatePhysicalScale(GLFWwindow *window)
 
 void TouchControls::DrawDebugOverlay(void)
 {
-	if (!ms_showDebugOverlay)
+	if (!ms_debugSettings.enabled)
 		return;
 
 	// FPS calculation
@@ -623,8 +664,8 @@ void TouchControls::DrawDebugOverlay(void)
 		fpsColor = ImVec4(1.0f, 1.0f, 0.2f, 1.0f);
 	else
 		fpsColor = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
-
-	ImGui::TextColored(fpsColor, "FPS: %.1f", fps);
+	if (ms_debugSettings.showFPS)
+		ImGui::TextColored(fpsColor, "FPS: %.1f", fps);
 
 #ifdef EXTENDED_COLOURFILTER
 	const char *fxName = "?";
@@ -634,17 +675,146 @@ void TouchControls::DrawDebugOverlay(void)
 		case CPostFX::POSTFX_NORMAL: fxName = "Normal"; break;
 		case CPostFX::POSTFX_MOBILE: fxName = "Mobile"; break;
 	}
-	ImGui::Text("FX: %s", fxName);
+	if (ms_debugSettings.showColorFilter)
+		ImGui::Text("FX: %s", fxName);
 #endif
 
 #ifdef OFFSCREEN_RENDER
-	ImGui::Text("3D: %dx%d (%.0f%%)", 
-		OffscreenRenderer::Get3DWidth(),
-		OffscreenRenderer::Get3DHeight(),
-		OffscreenRenderer::Get3DResolution() * 100.0f);
+	if (ms_debugSettings.showBufferSize)
+		ImGui::Text("3D: %dx%d (%.0f%%)", 
+			OffscreenRenderer::Get3DWidth(),
+			OffscreenRenderer::Get3DHeight(),
+			OffscreenRenderer::Get3DResolution() * 100.0f);
 #endif
 
 	ImGui::End();
+}
+
+void TouchControls::DrawSettingsPanel(void)
+{
+	if (!ms_showSettings)
+		return;
+
+	// UI scale factor for settings panel only
+	const float uiScale = 1.5f;
+
+	// Push scaled styles for larger controls
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f * uiScale, 4.0f * uiScale));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f * uiScale, 6.0f * uiScale));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f * uiScale, 12.0f * uiScale));
+	ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, 21.0f * uiScale);
+
+	ImGui::SetNextWindowPos(ImVec2(SCREEN_WIDTH * 0.5f, SCREEN_HEIGHT * 0.5f), 
+	                        ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+	ImGui::SetNextWindowSize(ImVec2(SCREEN_WIDTH, SCREEN_HEIGHT), ImGuiCond_Always);
+
+	if (ImGui::Begin("Settings", &ms_showSettings, 
+			ImGuiWindowFlags_NoTitleBar |
+			ImGuiWindowFlags_NoResize |
+			ImGuiWindowFlags_AlwaysAutoResize |
+			ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoSavedSettings)) 
+	{
+
+		// Scale font for this window only
+		ImGui::SetWindowFontScale(uiScale);
+
+		// === Graphics ===
+		if (ImGui::CollapsingHeader("Graphics", ImGuiTreeNodeFlags_DefaultOpen)) {
+			
+			// 3D Resolution — читаем/пишем напрямую в OffscreenRenderer
+			float scale = OffscreenRenderer::Get3DResolution();
+			ImGui::Text("3D Resolution: %.0f%%", scale * 100.0f);
+			if (ImGui::SliderFloat("##3DScale", &scale, 0.15f, 1.0f, "%.2f")) {
+				OffscreenRenderer::Set3DResolution(scale);
+			}
+			
+			// Presets
+			if (ImGui::Button("15%")) OffscreenRenderer::Set3DResolution(0.15f);
+			ImGui::SameLine();
+			if (ImGui::Button("25%")) OffscreenRenderer::Set3DResolution(0.25f);
+			ImGui::SameLine();
+			if (ImGui::Button("50%")) OffscreenRenderer::Set3DResolution(0.5f);
+			ImGui::SameLine();
+			if (ImGui::Button("75%")) OffscreenRenderer::Set3DResolution(0.75f);
+			ImGui::SameLine();
+			if (ImGui::Button("100%")) OffscreenRenderer::Set3DResolution(1.0f);
+
+#ifdef EXTENDED_PIPELINES
+			// Reflections — напрямую в CustomPipes
+			ImGui::Checkbox("Car Reflections", &CustomPipes::EnvMapEnabled);
+#endif
+		}
+
+		// === Debug Overlay ===
+		if (ImGui::CollapsingHeader("Debug Overlay")) {
+			ImGui::Checkbox("Enable Overlay", &ms_debugSettings.enabled);
+			
+			if (ms_debugSettings.enabled) {
+				ImGui::Indent();
+				ImGui::Checkbox("Show FPS", &ms_debugSettings.showFPS);
+				ImGui::Checkbox("Show Buffer Size", &ms_debugSettings.showBufferSize);
+				ImGui::Checkbox("Show Color Filter", &ms_debugSettings.showColorFilter);
+				ImGui::Unindent();
+			}
+		}
+		
+		ImGui::Separator();
+		
+		if (ImGui::Button("Save")) SaveSettings();
+		ImGui::SameLine();
+		if (ImGui::Button("Close")) ms_showSettings = false;
+	}
+	ImGui::End();
+
+	// Pop all style vars (must match push count)
+	ImGui::PopStyleVar(4);
+}
+
+void TouchControls::SaveSettings(void)
+{
+	FILE *f = fopen(GetConfigPath().c_str(), "w");
+	if (!f) return;
+
+	fprintf(f, "render3DScale=%f\n", OffscreenRenderer::Get3DResolution());
+#ifdef EXTENDED_PIPELINES
+	fprintf(f, "envMapEnabled=%d\n", CustomPipes::EnvMapEnabled ? 1 : 0);
+#endif
+	fprintf(f, "debugOverlay=%d\n", ms_debugSettings.enabled ? 1 : 0);
+	fprintf(f, "showFPS=%d\n", ms_debugSettings.showFPS ? 1 : 0);
+	fprintf(f, "showBufferSize=%d\n", ms_debugSettings.showBufferSize ? 1 : 0);
+	fprintf(f, "showColorFilter=%d\n", ms_debugSettings.showColorFilter ? 1 : 0);
+
+	fclose(f);
+}
+
+void TouchControls::LoadSettings(void)
+{
+
+	FILE *f = fopen(GetConfigPath().c_str(), "r");
+	if (!f) return;
+
+	char line[128];
+	while (fgets(line, sizeof(line), f)) {
+		float fval;
+		int ival;
+		if (sscanf(line, "render3DScale=%f", &fval) == 1)
+			OffscreenRenderer::Set3DResolution(fval);
+#ifdef EXTENDED_PIPELINES
+		else if (sscanf(line, "envMapEnabled=%d", &ival) == 1)
+			CustomPipes::EnvMapEnabled = ival != 0;
+#endif
+		else if (sscanf(line, "debugOverlay=%d", &ival) == 1)
+			ms_debugSettings.enabled = ival != 0;
+		else if (sscanf(line, "showFPS=%d", &ival) == 1)
+			ms_debugSettings.showFPS = ival != 0;
+		else if (sscanf(line, "showBufferSize=%d", &ival) == 1)
+			ms_debugSettings.showBufferSize = ival != 0;
+		else if (sscanf(line, "showColorFilter=%d", &ival) == 1)
+			ms_debugSettings.showColorFilter = ival != 0;
+	}
+
+	fclose(f);
 }
 
 // ============================================================
@@ -724,7 +894,17 @@ TouchControls::IsRightLookZone(double x, double y)
 void
 TouchControls::HandleTouchDown(int touchIndex, double x, double y)
 {
-	if (!ms_enabled) return;
+	// First touch becomes active
+	if (activeTouch == -1) {
+		ImGuiIO &io = ImGui::GetIO();
+		activeTouch = touchIndex;
+		io.AddMousePosEvent((float)x, (float)y);
+		io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+	}
+
+	if (!ms_enabled || ms_showSettings)
+		return;
+
 	UpdateLayout();
 
 	// --- Menu: handle as mouse ---
@@ -879,7 +1059,14 @@ TouchControls::HandleTouchDown(int touchIndex, double x, double y)
 void
 TouchControls::HandleTouchMove(int touchIndex, double x, double y)
 {
-	if (!ms_enabled) return;
+	// Move/drag - only track active touch
+	if (touchIndex == activeTouch) {
+		ImGuiIO &io = ImGui::GetIO();
+		io.AddMousePosEvent((float)x, (float)y);
+	}
+
+	if (!ms_enabled || ms_showSettings) 
+		return;
 
 	TouchPoint *tp = FindTouchByIndex(touchIndex);
 	if (tp == nil) return;
@@ -935,7 +1122,16 @@ TouchControls::HandleTouchMove(int touchIndex, double x, double y)
 void
 TouchControls::HandleTouchUp(int touchIndex, double x, double y)
 {
-	if (!ms_enabled) return;
+	// Only handle release of active touch
+	if (touchIndex == activeTouch) {
+		ImGuiIO &io = ImGui::GetIO();
+		activeTouch = -1;
+		io.AddMousePosEvent((float)x, (float)y);
+		io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+	}
+
+	if (!ms_enabled || ms_showSettings) 
+		return;
 
 	TouchPoint *tp = FindTouchByIndex(touchIndex);
 	if (tp == nil) return;
@@ -1091,6 +1287,9 @@ TouchControls::ApplyButtons(void)
 			switch (btn.actionType) {
 			case TACTION_KEY:  InjectKey(btn.actionCode, true); break;
 			case TACTION_PAD:  InjectPad(btn.actionCode, true); break;
+			case TACTION_SETTINGS:
+				ms_showSettings = !ms_showSettings;
+				break;
 			default: break;
 			}
 			btn.consumed = true;
@@ -1159,10 +1358,11 @@ void TouchControls::Draw(void)
 
 	// Start ImGui frame
 	ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplGlfw_NewFrame(OffscreenRenderer::GetRenderWidth(), OffscreenRenderer::GetRenderHeight());
+	ImGui_ImplGlfw_NewFrame(OffscreenRenderer::GetRenderWidth(), OffscreenRenderer::GetRenderHeight(), activeTouch != -1);
 	ImGui::NewFrame();
 
 	DrawDebugOverlay();
+	DrawSettingsPanel();
 
 	ImDrawList *drawList = ImGui::GetBackgroundDrawList();
 

@@ -742,7 +742,7 @@ OffscreenRenderer::Resize(int newWidth, int newHeight)
 void
 OffscreenRenderer::Set3DResolution(float scale)
 {
-    if (scale < 0.25f) scale = 0.25f;
+    if (scale < 0.15f) scale = 0.15f;
     if (scale > 1.0f) scale = 1.0f;
     
     if (scale == ms_3dScale)

@@ -746,7 +746,7 @@ static void ImGui_ImplGlfw_UpdateGamepads()
     #undef MAP_ANALOG
 }
 
-void ImGui_ImplGlfw_NewFrame(int in_w, int in_h)
+void ImGui_ImplGlfw_NewFrame(int in_w, int in_h, bool touchActive)
 {
     ImGuiIO& io = ImGui::GetIO();
     ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData();
@@ -773,7 +773,8 @@ void ImGui_ImplGlfw_NewFrame(int in_w, int in_h)
     io.DeltaTime = bd->Time > 0.0 ? (float)(current_time - bd->Time) : (float)(1.0f / 60.0f);
     bd->Time = current_time;
 
-    ImGui_ImplGlfw_UpdateMouseData();
+    if (!touchActive)
+        ImGui_ImplGlfw_UpdateMouseData(); 
     ImGui_ImplGlfw_UpdateMouseCursor();
 
     // Update game controllers (if enabled and available)

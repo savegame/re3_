@@ -23,6 +23,8 @@ namespace CustomPipes {
 
 rw::int32 CustomMatOffset;
 
+bool EnvMapEnabled = true;
+
 void*
 CustomMatCtor(void *object, int32, int32)
 {
