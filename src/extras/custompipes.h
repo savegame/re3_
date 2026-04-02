@@ -7,6 +7,7 @@ namespace CustomPipes {
 
 
 extern rw::TexDictionary *neoTxd;
+extern bool EnvMapEnabled;
 
 struct CustomMatExt
 {

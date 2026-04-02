@@ -27,6 +27,7 @@ enum eTouchActionType
 	TACTION_KEY,        // inject into CKeyboardState (ESC, ENTER, TAB, etc.)
 	TACTION_PAD,        // inject into PCTempJoyState (Cross, Square, etc.)
 	TACTION_MOUSE,      // inject mouse button (LMB, RMB)
+	TACTION_SETTINGS,   // toggle settings panel
 };
 
 // ---- Pad button IDs (for TACTION_PAD) ----
@@ -184,10 +185,6 @@ public:
 	static bool IsActive(void) { return ms_enabled; }
 	static void SetEnabled(bool enabled) { ms_enabled = enabled; }
 
-	// Debug overlay
-	static bool ms_showDebugOverlay;
-	static void DrawDebugOverlay(void);
-
 	// Configuration
 	static float ms_stickRadius;
 	static float ms_stickDeadzone;
@@ -195,6 +192,23 @@ public:
 	static float ms_stickBaseAlpha;
 	static float ms_stickThumbAlpha;
 
+
+	// Settings panel
+	static bool ms_showSettings;
+
+	// Debug overlay settings only (graphics settings live in their modules)
+	struct DebugOverlaySettings {
+		bool enabled;
+		bool showFPS;
+		bool showBufferSize;
+		bool showColorFilter;
+	};
+	static DebugOverlaySettings ms_debugSettings;
+
+	static void DrawSettingsPanel(void);
+	static void DrawDebugOverlay(void);
+	static void LoadSettings(void);
+	static void SaveSettings(void);
 private:
 	static bool ms_enabled;
 	static TouchPoint ms_touches[TOUCH_MAX_POINTS];
