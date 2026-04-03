@@ -82,6 +82,9 @@
 #ifdef TOUCH_CONTROLS
 #include "TouchControls.h"
 #endif
+#ifdef AURORAOS
+#include "../extras/AuroraPerf.h"
+#endif
 
 GlobalScene Scene;
 
@@ -561,7 +564,9 @@ Terminate3D(void)
 #ifdef DEBUGMENU
 	DebugMenuShutdown();
 #endif // !DEBUGMENU
-	
+#ifdef AURORAOS
+	CAuroraPerf::Shutdown();
+#endif
 	RsRwTerminate();
 
 	return;
@@ -1373,7 +1378,7 @@ RenderScene(void)
 	DoRWRenderHorizon();
 #endif
 	CRenderer::RenderRoads();
-	if (CustomPipes::EnvMapEnabled)
+	if (CAuroraPerf::ms_bEnableCoronaReflections)
 		CCoronas::RenderReflections();
 	CRenderer::RenderEverythingBarRoads();
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
@@ -1384,7 +1389,8 @@ RenderScene(void)
 	CWaterLevel::RenderTransparentWater();
 	CRenderer::RenderFadingInEntities();
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
-	CWeather::RenderRainStreaks();
+	if (CAuroraPerf::ms_bEnableRainStreaks)
+		CWeather::RenderRainStreaks();
 	CCoronas::RenderSunReflection();
 	POP_RENDERGROUP();
 }
@@ -1414,6 +1420,35 @@ RenderEffects(void)
 	}
 #endif
 	PUSH_RENDERGROUP("RenderEffects");
+#ifdef AURORAOS
+	if (CAuroraPerf::ms_bEnableGlass)
+		CGlass::Render();
+	if (CAuroraPerf::ms_bEnableWaterCannons)
+		CWaterCannons::Render();
+	CSpecialFX::Render(); // smoke, fire - need for gameplay
+	if (CAuroraPerf::ms_bSimpleShadowsOnly) 
+		// Simplified: only static shadows (ground shadows)
+		CShadows::RenderStaticShadows();
+
+	if (CAuroraPerf::ms_bEnableStoredShadows)
+		CShadows::RenderStoredShadows();
+
+	if (CAuroraPerf::ms_bEnableSkidmarks)
+		CSkidmarks::Render();
+	if (CAuroraPerf::ms_bEnableAntennas)
+		CAntennas::Render();
+	if (CAuroraPerf::ms_bEnableRubbish)
+		CRubbish::Render();
+	CCoronas::Render();
+	CParticle::Render();
+	CPacManPickups::Render();
+	CWeaponEffects::Render();
+	if (CAuroraPerf::ms_bEnableFogEffect)
+		CPointLights::RenderFogEffect();
+	if (CAuroraPerf::ms_bEnableMovingThings)
+		CMovingThings::Render();
+	CRenderer::RenderFirstPersonVehicle();
+#else
 	CGlass::Render();
 	CWaterCannons::Render();
 	CSpecialFX::Render();
@@ -1430,6 +1465,7 @@ RenderEffects(void)
 	CPointLights::RenderFogEffect();
 	CMovingThings::Render();
 	CRenderer::RenderFirstPersonVehicle();
+#endif
 	POP_RENDERGROUP();
 }
 
@@ -1643,7 +1679,7 @@ Idle(void *arg)
 		tbEndTimer("RenderScene");
 
 #ifdef EXTENDED_PIPELINES
-		if (CustomPipes::EnvMapEnabled)
+		if (CAuroraPerf::ms_bEnableCoronaReflections)
 			CustomPipes::EnvMapRender();
 #endif
 

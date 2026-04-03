@@ -949,7 +949,7 @@ void CPad::UpdateMouse()
 		}
 	}
 #endif
-	if ( IsForegroundApp() && PSGLOBAL(cursorIsInWindow) )
+	if ( IsForegroundApp() && PSGLOBAL(cursorIsInWindow) && !TouchControls::ms_showSettings )
 	{
 		double xpos = 1.0f, ypos;
 		glfwGetCursorPos(PSGLOBAL(window), &xpos, &ypos);
