@@ -13,6 +13,7 @@
 #include "OffscreenRenderer.h"
 
 #include "../extras/custompipes.h"
+#include "../extras/AuroraPerf.h"
 #include "../extras/imgui/imgui.h"
 #include "../extras/imgui/backends/imgui_impl_glfw.h"
 #include "../extras/imgui/backends/imgui_impl_opengl3.h"
@@ -740,11 +741,13 @@ void TouchControls::DrawSettingsPanel(void)
 			ImGui::SameLine();
 			if (ImGui::Button("100%")) OffscreenRenderer::Set3DResolution(1.0f);
 
-#ifdef EXTENDED_PIPELINES
+// #ifdef EXTENDED_PIPELINES
 			// Reflections — напрямую в CustomPipes
-			ImGui::Checkbox("Car Reflections", &CustomPipes::EnvMapEnabled);
-#endif
+			// ImGui::Checkbox("Car Reflections", &CustomPipes::EnvMapEnabled);
+// #endif
 		}
+
+		CAuroraPerf::RenderImGuiPanel();
 
 		// === Debug Overlay ===
 		if (ImGui::CollapsingHeader("Debug Overlay")) {
@@ -784,6 +787,8 @@ void TouchControls::SaveSettings(void)
 	fprintf(f, "showFPS=%d\n", ms_debugSettings.showFPS ? 1 : 0);
 	fprintf(f, "showBufferSize=%d\n", ms_debugSettings.showBufferSize ? 1 : 0);
 	fprintf(f, "showColorFilter=%d\n", ms_debugSettings.showColorFilter ? 1 : 0);
+	
+	CAuroraPerf::SaveToIni(f);
 
 	fclose(f);
 }
@@ -798,6 +803,10 @@ void TouchControls::LoadSettings(void)
 	while (fgets(line, sizeof(line), f)) {
 		float fval;
 		int ival;
+
+		if (line[0] == ';' || line[0] == '#' || line[0] == '\n' || line[0] == '[')
+			continue;
+
 		if (sscanf(line, "render3DScale=%f", &fval) == 1)
 			OffscreenRenderer::Set3DResolution(fval);
 #ifdef EXTENDED_PIPELINES
@@ -812,6 +821,8 @@ void TouchControls::LoadSettings(void)
 			ms_debugSettings.showBufferSize = ival != 0;
 		else if (sscanf(line, "showColorFilter=%d", &ival) == 1)
 			ms_debugSettings.showColorFilter = ival != 0;
+		else 
+			CAuroraPerf::LoadFromIni(line);
 	}
 
 	fclose(f);

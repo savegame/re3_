@@ -96,6 +96,7 @@
 #ifdef AURORAOS
 #include "../extras/Launcher.h"
 #include "../extras/SearchPaths.h"
+#include "../extras/AuroraPerf.h"
 #endif
 
 eLevelName CGame::currLevel;
@@ -704,6 +705,11 @@ bool CGame::Initialise(const char* datFile)
 		CPad::GetPad(i)->Clear(true);
 #ifdef TOUCH_CONTROLS
 	TouchControls::Init();
+#endif
+#ifdef AURORAOS
+	CAuroraPerf::Init();
+	// Apply ultra-low preset by default for Aurora OS
+	CAuroraPerf::SetPresetLow();
 #endif
 	return true;
 }
