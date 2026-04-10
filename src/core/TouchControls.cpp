@@ -322,6 +322,16 @@ TouchControls::SetupButtons(void)
 		20, 20, 80, 100, 200,
 		true, false,
 		TVIS_IN_VEHICLE);
+
+	AddButton(ms_buttons, ms_numButtons,
+		"B",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_BOTTOM_RIGHT, 90.0f, 160.0f,
+		55.0f, 55.0f,
+		TACTION_PAD, TPAD_CIRCLE,
+		180, 50, 50, 100, 200,
+		true, true,
+		TVIS_IN_VEHICLE);
 }
 
 bool
