@@ -173,6 +173,8 @@ public:
 #ifdef INVERT_LOOK_FOR_PAD
 	static bool bInvertLook4Pad;
 #endif
+	static bool bTouchAimToggle;
+	static bool bTouchAimJustPressed;
 	
 	static CKeyboardState OldKeyState;
 	static CKeyboardState NewKeyState;

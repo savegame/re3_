@@ -63,6 +63,8 @@ bool CPad::bInvertLook4Pad;
 unsigned char act_direct[6];
 unsigned char act_align[6];
 #endif
+bool CPad::bTouchAimToggle = false;
+bool CPad::bTouchAimJustPressed = false;
 
 CKeyboardState CPad::OldKeyState;
 CKeyboardState CPad::NewKeyState;
@@ -2273,6 +2275,9 @@ bool CPad::GetTarget(void)
 	if ( ArePlayerControlsDisabled() )
 		return false;
 
+	if ( bTouchAimToggle )
+		return true;
+
 	switch (CURMODE)
 	{
 		case 0:
@@ -2299,6 +2304,11 @@ bool CPad::TargetJustDown(void)
 {
 	if ( ArePlayerControlsDisabled() )
 		return false;
+
+	if (bTouchAimJustPressed) {
+		bTouchAimJustPressed = false;  // consume
+		return true;
+	}
 
 	switch (CURMODE)
 	{

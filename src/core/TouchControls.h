@@ -28,6 +28,7 @@ enum eTouchActionType
 	TACTION_PAD,        // inject into PCTempJoyState (Cross, Square, etc.)
 	TACTION_MOUSE,      // inject mouse button (LMB, RMB)
 	TACTION_SETTINGS,   // toggle settings panel
+	TACTION_AIM_TOGGLE, // toggle aim mode 
 };
 
 // ---- Pad button IDs (for TACTION_PAD) ----
@@ -86,6 +87,7 @@ enum eTouchVisibility
 	TVIS_TAXI_MISSION,      // taxi/ambulance/police mission available
 	TVIS_HAS_RADIO,         // vehicle has radio
 	TVIS_ON_FOOT,           // without any vehicle
+	TVIS_HAS_AIM_WEAPON,    // when we has weapon in hands and can aim
 };
 
 // ---- Touch button definition ----
