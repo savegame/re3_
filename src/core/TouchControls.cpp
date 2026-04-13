@@ -20,6 +20,7 @@
 
 #include "Vehicle.h"
 #include "Ped.h"
+#include "Pad.h"
 #include "World.h"
 #include "PlayerPed.h"
 #include "ModelIndices.h"
@@ -92,6 +93,47 @@ static std::string GetConfigPath()
 	}
 	return "./settings.ini";
 }
+// Forward declarations for cheat functions (defined in Pad.cpp)
+void WeaponCheat();
+void HealthCheat();
+void ArmourCheat();
+void MoneyCheat();
+void WantedLevelUpCheat();
+void WantedLevelDownCheat();
+void TankCheat();
+void BlowUpCarsCheat();
+void ChangePlayerCheat();
+void MayhemCheat();
+void EverybodyAttacksPlayerCheat();
+void WeaponsForAllCheat();
+void FastTimeCheat();
+void SlowTimeCheat();
+void SunnyWeatherCheat();
+void CloudyWeatherCheat();
+void RainyWeatherCheat();
+void FoggyWeatherCheat();
+void FastWeatherCheat();
+void OnlyRenderWheelsCheat();
+void ChittyChittyBangBangCheat();
+void StrongGripCheat();
+void NastyLimbsCheat();
+#ifdef KANGAROO_CHEAT
+void KangarooCheat();
+#endif
+
+static bool PlayerHasAimWeapon(void)
+{
+	CPlayerPed *player = FindPlayerPed();
+	if (!player) return false;
+
+	eWeaponType weapon = player->GetWeapon()->m_eWeaponType;
+
+	// First-person aim weapons in GTA3
+	return weapon == WEAPONTYPE_SNIPERRIFLE ||
+	       weapon == WEAPONTYPE_ROCKETLAUNCHER ||
+	       weapon == WEAPONTYPE_M16;
+}
+
 // ============================================================
 // Helper: add a button to the array
 // ============================================================
@@ -259,6 +301,17 @@ TouchControls::SetupButtons(void)
 		true, true,
 		TVIS_ON_FOOT);
 
+	// Aim toggle (sniper/RPG/M16) — binding-independent
+	AddButton(ms_buttons, ms_numButtons,
+		"AIM",                             
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_BOTTOM_RIGHT, 30.0f, 295.0f,
+		55.0f, 55.0f,                      // size
+		TACTION_AIM_TOGGLE, 0,             // action type, code unused
+		200, 60, 60, 100, 220,             // red color (r,g,b, normal alpha, pressed alpha)
+		true, true,                        // round, allow look-through
+		TVIS_HAS_AIM_WEAPON);              // only visible with aim weapons
+
 	// Enter-vehicle / Triangle (Y) — above the cluster
 	AddButton(ms_buttons, ms_numButtons,
 		"Y",
@@ -384,6 +437,10 @@ TouchControls::IsButtonVisible(const TouchButton &btn)
 		}
 	case TVIS_ON_FOOT:
 		return FindPlayerVehicle() == nil;
+	case TVIS_HAS_AIM_WEAPON:
+		if (!PlayerHasAimWeapon())
+			return false;
+		break;
 	}
 	return true;
 }
@@ -545,6 +602,8 @@ TouchControls::Reset(void)
 	ms_menuPressConsumed = false;
 	ms_menuReleaseQueued = false;
 	ms_menuCursorValid = false;
+	// Clear aim toggle
+	CPad::bTouchAimToggle = false;
 
 	ms_currentLayout = TOUCH_LAYOUT_NONE;
 }
@@ -750,11 +809,6 @@ void TouchControls::DrawSettingsPanel(void)
 			if (ImGui::Button("75%")) OffscreenRenderer::Set3DResolution(0.75f);
 			ImGui::SameLine();
 			if (ImGui::Button("100%")) OffscreenRenderer::Set3DResolution(1.0f);
-
-// #ifdef EXTENDED_PIPELINES
-			// Reflections — напрямую в CustomPipes
-			// ImGui::Checkbox("Car Reflections", &CustomPipes::EnvMapEnabled);
-// #endif
 		}
 
 		CAuroraPerf::RenderImGuiPanel();
@@ -770,6 +824,94 @@ void TouchControls::DrawSettingsPanel(void)
 				ImGui::Checkbox("Show Color Filter", &ms_debugSettings.showColorFilter);
 				ImGui::Unindent();
 			}
+		}
+
+		// === Cheats ===
+		if (ImGui::CollapsingHeader("Cheats")) {
+			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Warning: Using cheats may affect saves!");
+			ImGui::Spacing();
+			
+			// --- Player ---
+			ImGui::Text("Player:");
+			ImGui::Indent();
+			if (ImGui::Button("Full Health##cheat")) HealthCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("Full Armor##cheat")) ArmourCheat();
+			if (ImGui::Button("$250,000##cheat")) MoneyCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("All Weapons##cheat")) WeaponCheat();
+			if (ImGui::Button("Change Player##cheat")) ChangePlayerCheat();
+			ImGui::Unindent();
+			
+			ImGui::Spacing();
+			
+			// --- Wanted Level ---
+			ImGui::Text("Wanted Level:");
+			ImGui::Indent();
+			if (ImGui::Button("+ Star##cheat")) WantedLevelUpCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("- Star##cheat")) WantedLevelDownCheat();
+			ImGui::Unindent();
+			
+			ImGui::Spacing();
+			
+			// --- Vehicles ---
+			ImGui::Text("Vehicles:");
+			ImGui::Indent();
+			if (ImGui::Button("Spawn Tank##cheat")) TankCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("Blow Up Cars##cheat")) BlowUpCarsCheat();
+			if (ImGui::Button("Flying Cars##cheat")) ChittyChittyBangBangCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("Better Handling##cheat")) StrongGripCheat();
+			if (ImGui::Button("Invisible Cars##cheat")) OnlyRenderWheelsCheat();
+			ImGui::Unindent();
+			
+			ImGui::Spacing();
+			
+			// --- World ---
+			ImGui::Text("World:");
+			ImGui::Indent();
+			if (ImGui::Button("Mayhem##cheat")) MayhemCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("Peds Attack##cheat")) EverybodyAttacksPlayerCheat();
+			if (ImGui::Button("Peds Have Weapons##cheat")) WeaponsForAllCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("Gore Mode##cheat")) NastyLimbsCheat();
+			ImGui::Unindent();
+			
+			ImGui::Spacing();
+			
+			// --- Time ---
+			ImGui::Text("Game Speed:");
+			ImGui::Indent();
+			if (ImGui::Button("Fast Time##cheat")) FastTimeCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("Slow Time##cheat")) SlowTimeCheat();
+			ImGui::Unindent();
+			
+			ImGui::Spacing();
+			
+			// --- Weather ---
+			ImGui::Text("Weather:");
+			ImGui::Indent();
+			if (ImGui::Button("Sunny##cheat")) SunnyWeatherCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("Cloudy##cheat")) CloudyWeatherCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("Rainy##cheat")) RainyWeatherCheat();
+			if (ImGui::Button("Foggy##cheat")) FoggyWeatherCheat();
+			ImGui::SameLine();
+			if (ImGui::Button("Crazy Weather##cheat")) FastWeatherCheat();
+			ImGui::Unindent();
+ 
+#ifdef KANGAROO_CHEAT
+			ImGui::Spacing();
+			ImGui::Text("Special:");
+			ImGui::Indent();
+			if (ImGui::Button("Kangaroo Jump##cheat")) KangarooCheat();
+			ImGui::Unindent();
+#endif
 		}
 		
 		ImGui::Separator();
@@ -1296,6 +1438,18 @@ TouchControls::ApplyButtons(void)
 		if (!(btn.layoutFlags & ms_currentLayout))
 			continue;
 
+		// Handle aim toggle on press (not hold)
+		if (btn.actionType == TACTION_AIM_TOGGLE && btn.pending) {
+			btn.pending = false;
+			btn.active = true;
+			
+			// Toggle the global aim state in CPad
+			CPad::bTouchAimToggle = !CPad::bTouchAimToggle;
+			if (CPad::bTouchAimToggle)
+				CPad::bTouchAimJustPressed = true;  // fire "just down" once
+			continue;
+		}
+
 		// Latch step 1: pending → arm
 		if (btn.pending) {
 			btn.pending = false;
@@ -1311,6 +1465,7 @@ TouchControls::ApplyButtons(void)
 			case TACTION_SETTINGS:
 				ms_showSettings = !ms_showSettings;
 				break;
+			case TACTION_AIM_TOGGLE:// allready handled
 			default: break;
 			}
 			btn.consumed = true;
@@ -1320,6 +1475,23 @@ TouchControls::ApplyButtons(void)
 				btn.releaseQueued = false;
 			}
 		}
+	}
+
+	// Auto-reset aim toggle if weapon changed or no longer has aim weapon
+	static eWeaponType s_lastWeapon = WEAPONTYPE_UNARMED;
+	CPlayerPed *player = FindPlayerPed();
+	if (player) {
+		eWeaponType curWeapon = player->GetWeapon()->m_eWeaponType;
+		if (curWeapon != s_lastWeapon) {
+			// Weapon changed — reset aim toggle
+			CPad::bTouchAimToggle = false;
+			s_lastWeapon = curWeapon;
+		}
+	}
+
+	// Also reset if player is in vehicle
+	if (FindPlayerVehicle()) {
+		CPad::bTouchAimToggle = false;
 	}
 }
 
@@ -1394,7 +1566,14 @@ void TouchControls::Draw(void)
 		if (!IsButtonVisible(btn))
 			continue;
 
-		uint8 alpha = btn.pressed ? btn.pressedAlpha : btn.normalAlpha;
+		uint8 alpha;
+		if (btn.actionType == TACTION_AIM_TOGGLE && CPad::bTouchAimToggle) {
+			// Aim toggle is ON — use bright/highlighted state
+			alpha = 240;  // very visible
+		} else {
+			alpha = btn.pressed ? btn.pressedAlpha : btn.normalAlpha;
+		}
+
 		ImU32 bgColor = IM_COL32(btn.bgR, btn.bgG, btn.bgB, alpha);
 		ImU32 textColor = IM_COL32(255, 255, 255, alpha);
 

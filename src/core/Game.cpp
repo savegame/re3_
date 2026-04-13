@@ -632,7 +632,7 @@ bool CGame::Initialise(const char* datFile)
 #ifdef AURORAOS
 	CAuroraPerf::Init();
 	// Apply ultra-low preset by default for Aurora OS
-	CAuroraPerf::SetPresetLow();
+	// CAuroraPerf::SetPresetMedium();
 #endif
 	return true;
 }

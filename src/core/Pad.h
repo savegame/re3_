@@ -178,6 +178,8 @@ public:
 	static bool m_bDebugCamPCOn;
 	static bool bHasPlayerCheated;
 	static bool bInvertLook4Pad;
+	static bool bTouchAimToggle;
+	static bool bTouchAimJustPressed;
 	
 	static CKeyboardState OldKeyState;
 	static CKeyboardState NewKeyState;
