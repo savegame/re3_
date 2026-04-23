@@ -89,18 +89,20 @@ static std::string GetConfigPath()
 {
 	const char *home = getenv("HOME");
 	if (home) {
-		return std::string(home) + "/.config/ru.sashikknox/re3/settings.ini";
+		return std::string(home) + "/.config/ru.sashikknox/miami/settings.ini";
 	}
 	return "./settings.ini";
 }
 // Forward declarations for cheat functions (defined in Pad.cpp)
-void WeaponCheat();
+void WeaponCheat1();
+void WeaponCheat2();
+void WeaponCheat3();
 void HealthCheat();
 void ArmourCheat();
 void MoneyCheat();
 void WantedLevelUpCheat();
 void WantedLevelDownCheat();
-void TankCheat();
+// void TankCheat();
 void BlowUpCarsCheat();
 void ChangePlayerCheat();
 void MayhemCheat();
@@ -116,7 +118,7 @@ void FastWeatherCheat();
 void OnlyRenderWheelsCheat();
 void ChittyChittyBangBangCheat();
 void StrongGripCheat();
-void NastyLimbsCheat();
+// void NastyLimbsCheat();
 #ifdef KANGAROO_CHEAT
 void KangarooCheat();
 #endif
@@ -128,10 +130,10 @@ static bool PlayerHasAimWeapon(void)
 
 	eWeaponType weapon = player->GetWeapon()->m_eWeaponType;
 
-	// First-person aim weapons in GTA3
+	// TODO: Fix me, need all aim weapons for vice city
+	// First-person aim weapons in Vice City 
 	return weapon == WEAPONTYPE_SNIPERRIFLE ||
-	       weapon == WEAPONTYPE_ROCKETLAUNCHER ||
-	       weapon == WEAPONTYPE_M16;
+	       weapon == WEAPONTYPE_ROCKETLAUNCHER;
 }
 
 // ============================================================
@@ -417,7 +419,8 @@ TouchControls::IsButtonVisible(const TouchButton &btn)
 			int32 model = veh->GetModelIndex();
 			
 			// Taxi: TAXI, CABBIE, BORGNINE
-			if (model == MI_TAXI || model == MI_CABBIE || model == MI_BORGNINE)
+			// TODO: FIXME need all cars with missions
+			if (model == MI_TAXI || model == MI_CABBIE /*|| model == MI_BORGNINE*/)
 				return !CTheScripts::IsPlayerOnAMission();
 			
 			// Ambulance
@@ -839,7 +842,10 @@ void TouchControls::DrawSettingsPanel(void)
 			if (ImGui::Button("Full Armor##cheat")) ArmourCheat();
 			if (ImGui::Button("$250,000##cheat")) MoneyCheat();
 			ImGui::SameLine();
-			if (ImGui::Button("All Weapons##cheat")) WeaponCheat();
+			// if (ImGui::Button("All Weapons##cheat")) WeaponCheat();
+			if (ImGui::Button("Weapons 1##cheat")) WeaponCheat1();
+			if (ImGui::Button("Weapons 2##cheat")) WeaponCheat2();
+			if (ImGui::Button("Weapons 3##cheat")) WeaponCheat3();
 			if (ImGui::Button("Change Player##cheat")) ChangePlayerCheat();
 			ImGui::Unindent();
 			
@@ -858,7 +864,8 @@ void TouchControls::DrawSettingsPanel(void)
 			// --- Vehicles ---
 			ImGui::Text("Vehicles:");
 			ImGui::Indent();
-			if (ImGui::Button("Spawn Tank##cheat")) TankCheat();
+			// TODO: FIXME add more vehicles buttons (separate menu?)
+			// if (ImGui::Button("Spawn Tank##cheat")) TankCheat();
 			ImGui::SameLine();
 			if (ImGui::Button("Blow Up Cars##cheat")) BlowUpCarsCheat();
 			if (ImGui::Button("Flying Cars##cheat")) ChittyChittyBangBangCheat();
@@ -877,7 +884,7 @@ void TouchControls::DrawSettingsPanel(void)
 			if (ImGui::Button("Peds Attack##cheat")) EverybodyAttacksPlayerCheat();
 			if (ImGui::Button("Peds Have Weapons##cheat")) WeaponsForAllCheat();
 			ImGui::SameLine();
-			if (ImGui::Button("Gore Mode##cheat")) NastyLimbsCheat();
+			// if (ImGui::Button("Gore Mode##cheat")) NastyLimbsCheat();
 			ImGui::Unindent();
 			
 			ImGui::Spacing();

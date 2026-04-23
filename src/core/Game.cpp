@@ -1,5 +1,6 @@
 #include "common.h"
 #include "platform.h"
+#include "crossplatform.h"
 
 #include "Game.h"
 #include "main.h"
@@ -175,7 +176,7 @@ CGame::InitialiseOnceBeforeRW(void)
 #ifdef AURORAOS_SHARED_DATA
 	CSearchPaths::Add(AURORAOS_SHARED_DATA);
 #else
-	CSearchPaths::Add("/usr/share/ru.sashikknox.re3/data");
+	CSearchPaths::Add("/usr/share/ru.sashikknox.miami/data");
 #endif
 	// then original gamedata
 	const std::string &path = Launcher::GetGamePath();

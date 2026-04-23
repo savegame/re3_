@@ -525,16 +525,16 @@ CPostFX::SetupBlitShader(int32 r, int32 g, int32 b, int32 a)
         glUniform3fv(contrast->uniformLocations[u_contrastMult], 1, mult);
         glUniform3fv(contrast->uniformLocations[u_contrastAdd], 1, add);
     }else if(EffectSwitch == POSTFX_NORMAL){
-        if(!colourFilterIII) return;
+        if(!colourFilterVC) return;
         float f = Intensity;
         float blurcolors[4];
         blurcolors[0] = r / 255.0f;
         blurcolors[1] = g / 255.0f;
         blurcolors[2] = b / 255.0f;
         blurcolors[3] = a * f / 255.0f;
-        rw::gl3::im2dOverrideShader = colourFilterIII;
-        colourFilterIII->use();
-        glUniform4fv(colourFilterIII->uniformLocations[u_blurcolor], 1, blurcolors);
+        rw::gl3::im2dOverrideShader = colourFilterVC;
+        colourFilterVC->use();
+        glUniform4fv(colourFilterVC->uniformLocations[u_blurcolor], 1, blurcolors);
     }
 #endif
 }

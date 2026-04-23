@@ -266,7 +266,7 @@ Launcher::GetRequiredFiles()
 	static const std::vector<std::string> files = {
 		"models/gta3.img",
 		"models/gta3.dir", 
-		"data/gta3.dat",
+		"data/gta_vc.dat",
 		"data/default.dat",
 		"anim/ped.ifp"
 	};
@@ -288,7 +288,7 @@ Launcher::GetConfigPath()
 {
 	const char *home = getenv("HOME");
 	if (home) {
-		return std::string(home) + "/.config/ru.sashikknox/re3/launcher.conf";
+		return std::string(home) + "/.config/ru.sashikknox/miami/launcher.conf";
 	}
 	return "./launcher.conf";
 }
@@ -457,7 +457,7 @@ Launcher::Run()
 
 	Result result = Result::Exit;
 
-	LoadBackgroundTexture("/usr/share/ru.sashikknox.re3/poster.png");
+	LoadBackgroundTexture("/usr/share/ru.sashikknox.miami/poster.png");
 
 	// Main loop
 	while (!glfwWindowShouldClose(window)) {
@@ -516,7 +516,10 @@ Launcher::Run()
 			ImGui::Spacing();
 
 			// Instructions
-			ImGui::TextWrapped("Файлы игры GTA III не найдены. Укажите путь к папке с игрой:");
+			if (!resourcesFound)
+				ImGui::TextWrapped("Файлы игры GTA III не найдены. Укажите путь к папке с игрой:");
+			else
+				ImGui::TextWrapped("Файлы игры GTA III найдены. Но вы можете изменить путь до папки:");
 
 			ImGui::Spacing();
 
@@ -573,7 +576,7 @@ Launcher::Run()
 					glfwSetWindowShouldClose(window, GLFW_TRUE);
 				}
 			} else if (!missingFiles.empty()) {
-				ImGui::Text("Проверка: %s", inputPath.c_str());
+				ImGui::TextWrapped("Проверка: %s", inputPath.c_str());
 				ImGui::Spacing();
 				ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[X] Отсутствующие файлы:");
 				for (const auto& file : missingFiles) {
