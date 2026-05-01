@@ -218,7 +218,7 @@ CStreaming::Init2(void)
 	ms_pStreamingBuffer[2] = ms_pStreamingBuffer[1] + ms_streamingBufferSize*CDSTREAM_SECTOR_SIZE;
 	ms_pStreamingBuffer[3] = ms_pStreamingBuffer[2] + ms_streamingBufferSize*CDSTREAM_SECTOR_SIZE;
 #endif
-	debug("Streaming buffer size is %d sectors", ms_streamingBufferSize);
+	debug("Streaming buffer size is %d sectors\n", ms_streamingBufferSize);
 
 	// PC only, figure out how much memory we got
 #ifdef GTA_PC
@@ -235,7 +235,7 @@ CStreaming::Init2(void)
 #else
 	ms_memoryAvailable = 65 * MB;
 	desiredNumVehiclesLoaded = 25;
-	debug("Memory allocated to Streaming is %zuMB", ms_memoryAvailable/MB); // original modifier was %d
+	debug("Memory allocated to Streaming is %zuMB\n", ms_memoryAvailable/MB); // original modifier was %d
 #endif
 #undef MB
 #endif
@@ -261,17 +261,17 @@ CStreaming::Init(void)
 {
 #ifdef USE_TXD_CDIMAGE
 	if(!CanVideoCardDoDXT()){
-		int txdHandle = CFileMgr::OpenFile("MODELS\\TXD.IMG", "r");
-		if (txdHandle)
+		int txdHandle = CFileMgr::OpenFile("models/txd.img", "r");
+		if (txdHandle) 
 			CFileMgr::CloseFile(txdHandle);
 		if (!CheckVideoCardCaps() && txdHandle) {
-			CdStreamAddImage("MODELS\\TXD.IMG");
+			CdStreamAddImage("models/txd.img");
 			CStreaming::Init2();
 		} else {
 			CStreaming::Init2();
 			if (CreateTxdImageForVideoCard()) {
 				CStreaming::Shutdown();
-				CdStreamAddImage("MODELS\\TXD.IMG");
+				CdStreamAddImage("models/txd.img");
 				CStreaming::Init2();
 			}
 		}
@@ -674,7 +674,7 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 	endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
 	timeDiff = endTime - startTime;
 	if(timeDiff > 5)
-		debug("%s took %d ms\n", GetObjectName(streamId), timeDiff);
+		debug("[convering] %s took %d ms\n", GetObjectName(streamId), timeDiff);
 
 	return true;
 }
@@ -749,7 +749,7 @@ CStreaming::FinishLoadingLargeFile(int8 *buf, int32 streamId)
 	endTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
 	timeDiff = endTime - startTime;
 	if(timeDiff > 5)
-		debug("%s took %d ms\n", GetObjectName(streamId), timeDiff);
+		debug("[convering] %s took %d ms\n", GetObjectName(streamId), timeDiff);
 
 	return true;
 }

@@ -199,7 +199,7 @@ ReadVideoCardCapsFile(GPUcaps *caps)
 {
 	memset(caps, 0, sizeof(GPUcaps));
 
-	int32 file = CFileMgr::OpenFile("DATA\\CAPS.DAT", "rb");
+	int32 file = CFileMgr::OpenFile("data/caps.dat", "rb");
 	if (file != 0) {
 		CFileMgr::Read(file, (char*)&caps->version, 4);
 		CFileMgr::Read(file, (char*)&caps->platform, 4);
@@ -226,7 +226,7 @@ WriteVideoCardCapsFile(void)
 {
 	GPUcaps caps;
 	GetGPUcaps(&caps);
-	int32 file = CFileMgr::OpenFile("DATA\\CAPS.DAT", "wb");
+	int32 file = CFileMgr::OpenFile("data/caps.dat", "wb");
 	if (file != 0) {
 		CFileMgr::Write(file, (char*)&caps.version, 4);
 		CFileMgr::Write(file, (char*)&caps.platform, 4);
@@ -248,7 +248,7 @@ ReadVideoCardCapsFile(uint32 &cap32, uint32 &cap24, uint32 &cap16, uint32 &cap8)
 	cap16 = UINT32_MAX;
 	cap8 = UINT32_MAX;
 
-	int32 file = CFileMgr::OpenFile("DATA\\CAPS.DAT", "rb");
+	int32 file = CFileMgr::OpenFile("data/caps.dat", "rb");
 	if (file != 0) {
 		CFileMgr::Read(file, (char*)&cap32, 4);
 		CFileMgr::Read(file, (char*)&cap24, 4);
@@ -277,7 +277,7 @@ WriteVideoCardCapsFile(void)
 	uint32 cap24 = _rwD3D8FindCorrectRasterFormat(rwRASTERTYPETEXTURE, rwRASTERFORMAT888);
 	uint32 cap16 = _rwD3D8FindCorrectRasterFormat(rwRASTERTYPETEXTURE, rwRASTERFORMAT1555);
 	uint32 cap8 = _rwD3D8FindCorrectRasterFormat(rwRASTERTYPETEXTURE, rwRASTERFORMATPAL8 | rwRASTERFORMAT8888);
-	int32 file = CFileMgr::OpenFile("DATA\\CAPS.DAT", "wb");
+	int32 file = CFileMgr::OpenFile("data/CAPS.DAT", "wb");
 	if (file != 0) {
 		CFileMgr::Write(file, (char*)&cap32, 4);
 		CFileMgr::Write(file, (char*)&cap24, 4);
@@ -379,8 +379,9 @@ CreateTxdImageForVideoCard()
 	RwFileFunctions *filesys = RwOsGetFileInterface();
 #endif
 
-	RwStream *img = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMWRITE, "models\\txd.img");
+	RwStream *img = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMWRITE, "models/txd.img");
 	if (img == nil) {
+		debug("File models/txd.img not found!\n");
 		// original code does otherwise and it leaks
 		delete []buf;
 		delete pDir;
@@ -473,7 +474,7 @@ CreateTxdImageForVideoCard()
 	rw::gl3::needToReadBackTextures = false;
 #endif
 
-	if (!pDir->WriteDirFile("models\\txd.dir")) {
+	if (!pDir->WriteDirFile("models/txd.dir")) {
 		DealWithTxdWriteError(i, TXDSTORESIZE, "CVT_ERR");
 		delete pDir;
 		return false;
