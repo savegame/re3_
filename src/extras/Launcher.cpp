@@ -215,8 +215,8 @@ void Launcher::DrawDisclaimer(float dpiScale)
 	ImGui::SetCursorPosX(padding);
 	ImGui::PushTextWrapPos(io.DisplaySize.x - padding);
 	ImGui::TextWrapped(
-		"RE3 - это неофициальный проект обратной разработки GTA III.\n\n"
-		"Для работы требуются оригинальные файлы игры GTA III. "
+		"REVC - это неофициальный проект обратной разработки GTA Vice City.\n\n"
+		"Для работы требуются оригинальные файлы игры GTA Vice City. "
 		"Этот проект не содержит и не распространяет игровые ресурсы.\n\n"
 		"Используйте только легально приобретённые копии игры.\n\n"
 		"Разработчики не несут ответственности за использование данного ПО."
@@ -278,7 +278,7 @@ Launcher::GetDefaultPath()
 {
 	const char *home = getenv("HOME");
 	if(home) {
-		return std::string(home) + "/Documents/GTA3"; 
+		return std::string(home) + "/Documents/ViceCity"; 
 	}
 	return "./";
 }
@@ -395,13 +395,13 @@ Launcher::Run()
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
-	GLFWwindow *window = glfwCreateWindow(720, 480, "RE3 Launcher", nullptr, nullptr);
+	GLFWwindow *window = glfwCreateWindow(720, 480, "REVC Launcher", nullptr, nullptr);
 
 	// Fallback to OpenGL if GLES failed
 	if (!window) {
 		fprintf(stderr, "Launcher: GLES2 failed, trying OpenGL...\n");
 		glfwDefaultWindowHints();
-		window = glfwCreateWindow(720, 480, "RE3 Launcher", nullptr, nullptr);
+		window = glfwCreateWindow(720, 480, "REVC Launcher", nullptr, nullptr);
 	}
 
 	if (!window) {
@@ -508,7 +508,7 @@ Launcher::Run()
 			// Title
 			ImGui::SetCursorPosY(20.0f * dpiScale);
 			ImGui::SetWindowFontScale(1.5f);
-			ImGui::Text("RE3 Launcher");
+			ImGui::Text("REVC Launcher");
 			ImGui::SetWindowFontScale(1.0f);
 			
 			ImGui::Spacing();
