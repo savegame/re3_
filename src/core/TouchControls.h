@@ -88,6 +88,7 @@ enum eTouchVisibility
 	TVIS_HAS_RADIO,         // vehicle has radio
 	TVIS_ON_FOOT,           // without any vehicle
 	TVIS_HAS_AIM_WEAPON,    // when we has weapon in hands and can aim
+	TVIS_NEAR_PROPERTY,     // near a for-sale property, on foot, not on mission
 };
 
 // ---- Touch button definition ----

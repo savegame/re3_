@@ -25,6 +25,8 @@
 #include "PlayerPed.h"
 #include "ModelIndices.h"
 #include "Script.h"
+#include "Pickups.h"
+#include "PlayerInfo.h"
 
 #include "Timer.h"
 #ifdef EXTENDED_COLOURFILTER
@@ -367,6 +369,17 @@ TouchControls::SetupButtons(void)
 		false, false,
 		TVIS_TAXI_MISSION);
 
+	// Buy property — visible only near a for-sale property pickup
+	AddButton(ms_buttons, ms_numButtons,
+		"BUY",
+		TOUCH_LAYOUT_GAMEPLAY,
+		ANCHOR_BOTTOM_CENTER, 0.0f, 30.0f,
+		65.0f, 35.0f,
+		TACTION_PAD, TPAD_L1,
+		200, 180, 40, 140, 220,
+		false, false,
+		TVIS_NEAR_PROPERTY);
+
 	// Horn — only in vehicle
 	AddButton(ms_buttons, ms_numButtons,
 		"!",
@@ -444,6 +457,23 @@ TouchControls::IsButtonVisible(const TouchButton &btn)
 		if (!PlayerHasAimWeapon())
 			return false;
 		break;
+	case TVIS_NEAR_PROPERTY:
+		{
+			if (FindPlayerVehicle() != nil) return false;
+			if (CTheScripts::IsPlayerOnAMission()) return false;
+			CVector playerPos = FindPlayerCoors();
+			for (int i = 0; i < NUMPICKUPS; i++) {
+				CPickup &pk = CPickups::aPickUps[i];
+				if (pk.m_eType != PICKUP_PROPERTY_FORSALE) continue;
+				if (pk.m_bRemoved) continue;
+				float dx = pk.m_vecPos.x - playerPos.x;
+				float dy = pk.m_vecPos.y - playerPos.y;
+				float dz = pk.m_vecPos.z - playerPos.z;
+				if (dx*dx + dy*dy + dz*dz < 6.25f) // 2.5f radius
+					return true;
+			}
+			return false;
+		}
 	}
 	return true;
 }
