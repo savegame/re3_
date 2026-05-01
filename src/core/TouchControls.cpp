@@ -38,6 +38,7 @@
 
 static int activeTouch = -1; // For ImGui
 
+int TouchControls::ms_activeTab = TouchControls::TAB_PREFS;
 // Default configuration
 float TouchControls::ms_stickRadius     = 80.0f;   // game pixels
 float TouchControls::ms_stickDeadzone   = 0.15f;   // 15% deadzone
@@ -124,6 +125,9 @@ void StrongGripCheat();
 #ifdef KANGAROO_CHEAT
 void KangarooCheat();
 #endif
+
+extern void SpawnCar(int id);
+extern const char *carnames[];
 
 static bool PlayerHasAimWeapon(void)
 {
@@ -798,41 +802,141 @@ void TouchControls::DrawSettingsPanel(void)
 	if (!ms_showSettings)
 		return;
 
-	// UI scale factor for settings panel only
-	const float uiScale = 1.5f;
+	float xscale = 1.0f, yscale = 1.0f;
+	GLFWwindow *win = glfwGetCurrentContext();
+	if (win)
+		glfwGetWindowContentScale(win, &xscale, &yscale);
+	// contentScale=1.0 at 96 DPI (desktop default), ~2-3 on mobile HiDPI
+	// clamp to sane range for UI
+	const float uiScale = fmaxf(1.0f, fminf(yscale, 4.0f));
 
-	// Push scaled styles for larger controls
 	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f * uiScale, 4.0f * uiScale));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f * uiScale, 6.0f * uiScale));
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f * uiScale, 12.0f * uiScale));
 	ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, 21.0f * uiScale);
+	ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 18.0f * uiScale);
 
-	ImGui::SetNextWindowPos(ImVec2(SCREEN_WIDTH * 0.5f, SCREEN_HEIGHT * 0.5f), 
-	                        ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+	// ---- Main full-screen window (background for everything) ----
+	ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
 	ImGui::SetNextWindowSize(ImVec2(SCREEN_WIDTH, SCREEN_HEIGHT), ImGuiCond_Always);
 
-	if (ImGui::Begin("Settings", &ms_showSettings, 
+	if (ImGui::Begin("Settings", &ms_showSettings,
 			ImGuiWindowFlags_NoTitleBar |
 			ImGuiWindowFlags_NoResize |
-			ImGuiWindowFlags_AlwaysAutoResize |
 			ImGuiWindowFlags_NoMove |
-			ImGuiWindowFlags_NoSavedSettings)) 
+			ImGuiWindowFlags_NoSavedSettings |
+			ImGuiWindowFlags_NoScrollbar |
+			ImGuiWindowFlags_NoScrollWithMouse))
 	{
-
-		// Scale font for this window only
 		ImGui::SetWindowFontScale(uiScale);
 
-		// === Graphics ===
-		if (ImGui::CollapsingHeader("Graphics", ImGuiTreeNodeFlags_DefaultOpen)) {
-			
-			// 3D Resolution — читаем/пишем напрямую в OffscreenRenderer
+		// ---- Tab buttons (left column) ----
+		const float tabW = 120.0f * uiScale;
+		const float tabH = 45.0f * uiScale;
+		const float tabGap = 6.0f * uiScale;
+		const float contentPad = 8.0f * uiScale;
+		const float contentX = tabW + contentPad * 2.0f;
+
+		static const char *tabLabels[TAB_COUNT] = { "Pref", "Dbg", "Cheat" };
+
+		ImGui::SetCursorPos(ImVec2(contentPad, contentPad));
+		ImGui::BeginGroup();
+		for (int i = 0; i < TAB_COUNT; i++) {
+			bool active = (ms_activeTab == i);
+			if (active) {
+				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.5f, 0.8f, 0.9f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.5f, 0.8f, 0.9f));
+			} else {
+				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.2f, 0.8f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.8f));
+			}
+			if (ImGui::Button(tabLabels[i], ImVec2(tabW, tabH)))
+				ms_activeTab = i;
+			ImGui::PopStyleColor(2);
+		}
+
+		// Close button below tabs
+		ImGui::Spacing();
+		ImGui::Spacing();
+		if (ImGui::Button("Close", ImVec2(tabW, tabH)))
+			ms_showSettings = false;
+
+		ImGui::EndGroup();
+
+		// ---- Content area (right of tabs, scrollable child) ----
+		float contentW = SCREEN_WIDTH - contentX - contentPad;
+		float contentH = SCREEN_HEIGHT - contentPad * 2.0f;
+
+		ImGui::SetCursorPos(ImVec2(contentX, contentPad));
+		ImGui::BeginChild("##Content", ImVec2(contentW, contentH), true);
+		ImGui::SetWindowFontScale(uiScale);
+
+		static bool  scrollActive = false;  // past threshold
+		// ---- Touch scroll with drag threshold + inertia ----
+		{
+			static float scrollVelocity = 0.0f;
+			static float lastTouchY = 0.0f;
+			static float startTouchY = 0.0f;
+			static bool  dragging = false;
+			const float  dragThreshold = 10.0f; // pixels before scroll starts
+			const float  friction = 0.92f;
+			const float  minVel = 0.5f;
+
+			ImGuiIO &io = ImGui::GetIO();
+			bool hovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+
+			if (hovered && io.MouseDown[0]) {
+				if (!dragging) {
+					// Touch just started
+					dragging = true;
+					scrollActive = false;
+					startTouchY = io.MousePos.y;
+					lastTouchY = io.MousePos.y;
+					scrollVelocity = 0.0f;
+				} else {
+					float totalDY = startTouchY - io.MousePos.y;
+					if (!scrollActive && fabsf(totalDY) > dragThreshold) {
+						// Crossed threshold — start scrolling, steal input
+						scrollActive = true;
+						lastTouchY = io.MousePos.y;
+					}
+					if (scrollActive) {
+						float dy = lastTouchY - io.MousePos.y;
+						scrollVelocity = dy;
+						ImGui::SetScrollY(ImGui::GetScrollY() + dy);
+						lastTouchY = io.MousePos.y;
+
+
+					}
+				}
+			} else {
+				if (dragging) {
+					dragging = false;
+					scrollActive = false;
+				}
+				// Inertia
+				if (fabsf(scrollVelocity) > minVel) {
+					ImGui::SetScrollY(ImGui::GetScrollY() + scrollVelocity);
+					scrollVelocity *= friction;
+				} else {
+					scrollVelocity = 0.0f;
+				}
+			}
+		}
+
+		bool blockInput = scrollActive;
+		if (blockInput) ImGui::BeginDisabled();
+
+		// ========== TAB: Preferences ==========
+		if (ms_activeTab == TAB_PREFS) {
+			ImGui::Text("Graphics");
+			ImGui::Separator();
+
 			float scale = OffscreenRenderer::Get3DResolution();
 			ImGui::Text("3D Resolution: %.0f%%", scale * 100.0f);
-			if (ImGui::SliderFloat("##3DScale", &scale, 0.15f, 1.0f, "%.2f")) {
+			if (ImGui::SliderFloat("##3DScale", &scale, 0.15f, 1.0f, "%.2f"))
 				OffscreenRenderer::Set3DResolution(scale);
-			}
-			
-			// Presets
+
 			if (ImGui::Button("15%")) OffscreenRenderer::Set3DResolution(0.15f);
 			ImGui::SameLine();
 			if (ImGui::Button("25%")) OffscreenRenderer::Set3DResolution(0.25f);
@@ -842,14 +946,20 @@ void TouchControls::DrawSettingsPanel(void)
 			if (ImGui::Button("75%")) OffscreenRenderer::Set3DResolution(0.75f);
 			ImGui::SameLine();
 			if (ImGui::Button("100%")) OffscreenRenderer::Set3DResolution(1.0f);
+
+			CAuroraPerf::RenderImGuiPanel();
+
+			ImGui::Spacing();
+			ImGui::Separator();
+			if (ImGui::Button("Save Settings")) SaveSettings();
 		}
 
-		CAuroraPerf::RenderImGuiPanel();
+		// ========== TAB: Debug ==========
+		else if (ms_activeTab == TAB_DEBUG) {
+			ImGui::Text("Debug Overlay");
+			ImGui::Separator();
 
-		// === Debug Overlay ===
-		if (ImGui::CollapsingHeader("Debug Overlay")) {
 			ImGui::Checkbox("Enable Overlay", &ms_debugSettings.enabled);
-			
 			if (ms_debugSettings.enabled) {
 				ImGui::Indent();
 				ImGui::Checkbox("Show FPS", &ms_debugSettings.showFPS);
@@ -857,14 +967,17 @@ void TouchControls::DrawSettingsPanel(void)
 				ImGui::Checkbox("Show Color Filter", &ms_debugSettings.showColorFilter);
 				ImGui::Unindent();
 			}
+
+			ImGui::Spacing();
+			ImGui::Separator();
+			if (ImGui::Button("Save Settings")) SaveSettings();
 		}
 
-		// === Cheats ===
-		if (ImGui::CollapsingHeader("Cheats")) {
+		// ========== TAB: Cheats ==========
+		else if (ms_activeTab == TAB_CHEATS) {
 			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Warning: Using cheats may affect saves!");
 			ImGui::Spacing();
-			
-			// --- Player ---
+
 			ImGui::Text("Player:");
 			ImGui::Indent();
 			if (ImGui::Button("Full Health##cheat")) HealthCheat();
@@ -872,64 +985,80 @@ void TouchControls::DrawSettingsPanel(void)
 			if (ImGui::Button("Full Armor##cheat")) ArmourCheat();
 			if (ImGui::Button("$250,000##cheat")) MoneyCheat();
 			ImGui::SameLine();
-			// if (ImGui::Button("All Weapons##cheat")) WeaponCheat();
 			if (ImGui::Button("Weapons 1##cheat")) WeaponCheat1();
 			if (ImGui::Button("Weapons 2##cheat")) WeaponCheat2();
 			if (ImGui::Button("Weapons 3##cheat")) WeaponCheat3();
 			if (ImGui::Button("Change Player##cheat")) ChangePlayerCheat();
 			ImGui::Unindent();
-			
+
 			ImGui::Spacing();
-			
-			// --- Wanted Level ---
 			ImGui::Text("Wanted Level:");
 			ImGui::Indent();
 			if (ImGui::Button("+ Star##cheat")) WantedLevelUpCheat();
 			ImGui::SameLine();
 			if (ImGui::Button("- Star##cheat")) WantedLevelDownCheat();
 			ImGui::Unindent();
-			
+
 			ImGui::Spacing();
-			
-			// --- Vehicles ---
 			ImGui::Text("Vehicles:");
 			ImGui::Indent();
 			// TODO: FIXME add more vehicles buttons (separate menu?)
 			// if (ImGui::Button("Spawn Tank##cheat")) TankCheat();
-			ImGui::SameLine();
 			if (ImGui::Button("Blow Up Cars##cheat")) BlowUpCarsCheat();
 			if (ImGui::Button("Flying Cars##cheat")) ChittyChittyBangBangCheat();
 			ImGui::SameLine();
 			if (ImGui::Button("Better Handling##cheat")) StrongGripCheat();
 			if (ImGui::Button("Invisible Cars##cheat")) OnlyRenderWheelsCheat();
-			ImGui::Unindent();
-			
+
 			ImGui::Spacing();
-			
-			// --- World ---
+			ImGui::Text("Spawn Vehicle:");
+			{
+				extern const char *carnames[];
+				static int spawnIdx = 0;
+				int numCars = MI_LAST_VEHICLE - MI_FIRST_VEHICLE + 1;
+
+				ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 28.0f * uiScale);
+				ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f * uiScale, 10.0f * uiScale));
+				ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f * uiScale, 8.0f * uiScale));
+				if (ImGui::BeginCombo("##SpawnVehicle", carnames[spawnIdx], ImGuiComboFlags_HeightLargest)) {
+					ImGui::SetWindowFontScale(uiScale);
+					for (int i = 0; i < numCars; i++) {
+						bool selected = (spawnIdx == i);
+						if (ImGui::Selectable(carnames[i], selected))
+							spawnIdx = i;
+						if (selected)
+							ImGui::SetItemDefaultFocus();
+					}
+					ImGui::EndCombo();
+				}
+				ImGui::PopStyleVar(3);
+
+				if (ImGui::Button("Spawn##vehicle")) {
+					int id = MI_FIRST_VEHICLE + spawnIdx;
+					if (id != MI_CHOPPER && id != MI_AIRTRAIN && id != MI_DEADDODO)
+						SpawnCar(id);
+				}
+			}
+			ImGui::Unindent();
+
+			ImGui::Spacing();
 			ImGui::Text("World:");
 			ImGui::Indent();
 			if (ImGui::Button("Mayhem##cheat")) MayhemCheat();
 			ImGui::SameLine();
 			if (ImGui::Button("Peds Attack##cheat")) EverybodyAttacksPlayerCheat();
 			if (ImGui::Button("Peds Have Weapons##cheat")) WeaponsForAllCheat();
-			ImGui::SameLine();
-			// if (ImGui::Button("Gore Mode##cheat")) NastyLimbsCheat();
 			ImGui::Unindent();
-			
+
 			ImGui::Spacing();
-			
-			// --- Time ---
 			ImGui::Text("Game Speed:");
 			ImGui::Indent();
 			if (ImGui::Button("Fast Time##cheat")) FastTimeCheat();
 			ImGui::SameLine();
 			if (ImGui::Button("Slow Time##cheat")) SlowTimeCheat();
 			ImGui::Unindent();
-			
+
 			ImGui::Spacing();
-			
-			// --- Weather ---
 			ImGui::Text("Weather:");
 			ImGui::Indent();
 			if (ImGui::Button("Sunny##cheat")) SunnyWeatherCheat();
@@ -941,7 +1070,7 @@ void TouchControls::DrawSettingsPanel(void)
 			ImGui::SameLine();
 			if (ImGui::Button("Crazy Weather##cheat")) FastWeatherCheat();
 			ImGui::Unindent();
- 
+
 #ifdef KANGAROO_CHEAT
 			ImGui::Spacing();
 			ImGui::Text("Special:");
@@ -950,17 +1079,14 @@ void TouchControls::DrawSettingsPanel(void)
 			ImGui::Unindent();
 #endif
 		}
-		
-		ImGui::Separator();
-		
-		if (ImGui::Button("Save")) SaveSettings();
-		ImGui::SameLine();
-		if (ImGui::Button("Close")) ms_showSettings = false;
+
+		if (blockInput) ImGui::EndDisabled();
+
+		ImGui::EndChild();
 	}
 	ImGui::End();
 
-	// Pop all style vars (must match push count)
-	ImGui::PopStyleVar(4);
+	ImGui::PopStyleVar(5);
 }
 
 void TouchControls::SaveSettings(void)

@@ -142,6 +142,16 @@ struct GLFWwindow;
 class TouchControls
 {
 public:
+	// Tab system for settings panel
+	enum eSettingsTab {
+		TAB_PREFS = 0,
+		TAB_DEBUG,
+		TAB_CHEATS,
+		TAB_COUNT
+	};
+
+	static int ms_activeTab;
+
 	struct TouchPoint
 	{
 		bool   active;
