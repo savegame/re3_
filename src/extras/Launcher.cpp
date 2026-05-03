@@ -517,9 +517,9 @@ Launcher::Run()
 
 			// Instructions
 			if (!resourcesFound)
-				ImGui::TextWrapped("Файлы игры GTA III не найдены. Укажите путь к папке с игрой:");
+				ImGui::TextWrapped("Файлы игры GTA Vice City не найдены. Укажите путь к папке с игрой:");
 			else
-				ImGui::TextWrapped("Файлы игры GTA III найдены. Но вы можете изменить путь до папки:");
+				ImGui::TextWrapped("Файлы игры GTA Vice City найдены. Но вы можете изменить путь до папки:");
 
 			ImGui::Spacing();
 
