@@ -1348,7 +1348,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 	if (pointedGun == 2) pointedGun = 1;
 
 	// Rotate player/arm when shooting. We don't have auto-rotation anymore
-	if (CCamera::m_bUseMouse3rdPerson && CCamera::bFreeCam &&
+	if (CCamera::m_bUseMouse3rdPerson && CCamera::bFreeCam && !CPad::bTouchAimToggle &&
 		m_nSelectedWepSlot == m_currentWeapon && m_nMoveState != PEDMOVE_SPRINT) {
 
 #define CAN_AIM_WITH_ARM (weaponInfo->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM) && !bIsDucking && !bCrouchWhenShooting)
@@ -1409,7 +1409,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 				((CPlayerPed*)this)->m_fFPSMoveHeading = TheCamera.Find3rdPersonQuickAimPitch();
 				m_bFreeAimActive = true;
 			}
-		} else {
+		} else if (!CPad::bTouchAimToggle) {
 			pointedGun = 0;
 			ClearPointGunAt();
 		}
@@ -1421,9 +1421,9 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 			// what??
 			if (!m_pPointGunAt
 #ifdef FREE_CAM
-				|| (!CCamera::bFreeCam && CCamera::m_bUseMouse3rdPerson)
+				|| (!CCamera::bFreeCam && CCamera::m_bUseMouse3rdPerson && !CPad::bTouchAimToggle)
 #else
-				|| CCamera::m_bUseMouse3rdPerson
+				|| (CCamera::m_bUseMouse3rdPerson && !CPad::bTouchAimToggle)
 #endif		
 			) {
 				ClearWeaponTarget();
@@ -1457,7 +1457,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 			TheCamera.SetNewPlayerWeaponMode(CCam::MODE_SYPHON, 0, 0);
 			TheCamera.UpdateAimingCoors(m_pPointGunAt->GetPosition());
 
-		} else if (!CCamera::m_bUseMouse3rdPerson) {
+		} else if (!CCamera::m_bUseMouse3rdPerson || CPad::bTouchAimToggle) {
 			if (padUsed->TargetJustDown() || TheCamera.m_bJustJumpedOutOf1stPersonBecauseOfTarget)
 				FindWeaponLockOnTarget();
 		}

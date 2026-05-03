@@ -132,14 +132,16 @@ extern const char *carnames[];
 static bool PlayerHasAimWeapon(void)
 {
 	CPlayerPed *player = FindPlayerPed();
-	if (!player) return false;
+    if (!player) return false;
+    if (FindPlayerVehicle()) return false;
 
-	eWeaponType weapon = player->GetWeapon()->m_eWeaponType;
+    eWeaponType weapon = player->GetWeapon()->m_eWeaponType;
+    if (weapon == WEAPONTYPE_UNARMED) return false;
 
-	// TODO: Fix me, need all aim weapons for vice city
-	// First-person aim weapons in Vice City 
-	return weapon == WEAPONTYPE_SNIPERRIFLE ||
-	       weapon == WEAPONTYPE_ROCKETLAUNCHER;
+    CWeaponInfo *info = CWeaponInfo::GetWeaponInfo(weapon);
+    return info->IsFlagSet(WEAPONFLAG_CANAIM) || 
+           info->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM) || 
+           info->IsFlagSet(WEAPONFLAG_1ST_PERSON);
 }
 
 // ============================================================
@@ -1638,6 +1640,13 @@ TouchControls::ApplyButtons(void)
 				btn.releaseQueued = false;
 			}
 		}
+	}
+
+	// While aim toggle is ON, continuously inject R1 so ALL aim/lock-on
+	// code paths work (not just GetTarget())
+	if (CPad::bTouchAimToggle) {
+		CPad *pad = CPad::GetPad(0);
+		pad->PCTempJoyState.RightShoulder1 = 255;
 	}
 
 	// Auto-reset aim toggle if weapon changed or no longer has aim weapon
