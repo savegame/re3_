@@ -167,7 +167,7 @@ RwTexDictionaryGtaStreamRead2(RwStream *stream, RwTexDictionary *texDict)
 
 #ifdef LIBRW
 
-#define CAPSVERSION 0
+#define CAPSVERSION 1
 
 struct GPUcaps
 {
