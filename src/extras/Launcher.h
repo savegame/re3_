@@ -24,11 +24,13 @@ public:
     // Get default game path
     static const std::string& GetGamePath() { return ms_gamePath; }
     static std::string GetDefaultPath();
+    static GLFWwindow* GetWindow() { return ms_window; } 
 
     // Get/Set stored path (from config file)
     static std::string LoadStoredPath();
     static void SaveStoredPath(const std::string &path);
 
+    static float CalculateDpiScale(GLFWwindow *window);
 private:
     // Files required for game to run
     static const std::vector<std::string>& GetRequiredFiles();  
@@ -40,12 +42,13 @@ private:
     // Disclaimer
     static bool ms_showDisclaimer;
     static bool ms_disclaimerAccepted;
+    static GLFWwindow *ms_window;
     
     
     // Config file path
     static std::string GetConfigPath();
     static void DrawBackground(int width, int height);
     static void DrawDisclaimer(float dpiScale);
-    static float CalculateDpiScale(GLFWwindow *window);
+    static void DrawLoadingFrame(GLFWwindow *window);
     static bool LoadBackgroundTexture(const char *path);
 };

@@ -1989,6 +1989,13 @@ main(int argc, char *argv[])
 		return FALSE;
 	}
 
+#ifdef AURORAOS
+	// The game reuses the launcher's window and GL context (single window).
+	// Must be after rsINITIALIZE - psInitialize() sets RsGlobal.ps there.
+	// startGLFW() in librw picks the window up via openParams.window below.
+	PSGLOBAL(window) = Launcher::GetWindow();
+#endif
+
 #ifdef _WIN32
 	/*
 	 * Get proper command line params, cmdLine passed to us does not

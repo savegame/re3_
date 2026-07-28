@@ -24,6 +24,7 @@ bool Launcher::ms_backgroundLoaded = false;
 std::string Launcher::ms_gamePath = Launcher::GetDefaultPath();
 bool Launcher::ms_showDisclaimer = true;
 bool Launcher::ms_disclaimerAccepted = false;
+GLFWwindow *Launcher::ms_window = nullptr;
 
 bool showFolderDialog = false;
 
@@ -259,6 +260,55 @@ void Launcher::DrawDisclaimer(float dpiScale)
 	ImGui::End();
 }
 
+void Launcher::DrawLoadingFrame(GLFWwindow *window)
+{
+	ImGuiIO& io = ImGui::GetIO();
+
+	// Draw twice to be sure the frame is presented regardless of buffering
+	for (int i = 0; i < 2; i++) {
+		glfwPollEvents();
+
+		int winWidth, winHeight;
+		glfwGetWindowSize(window, &winWidth, &winHeight);
+
+		glViewport(0, 0, winWidth, winHeight);
+		glClearColor(0.1f, 0.1f, 0.12f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+
+		DrawBackground(winWidth, winHeight);
+
+		ImGui::SetNextWindowPos(ImVec2(0, 0));
+		ImGui::SetNextWindowSize(ImVec2((float)winWidth, (float)winHeight));
+
+		ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
+		                       | ImGuiWindowFlags_NoResize
+		                       | ImGuiWindowFlags_NoMove
+		                       | ImGuiWindowFlags_NoCollapse
+		                       | ImGuiWindowFlags_NoBackground;
+
+		ImGui::Begin("LoadingWindow", nullptr, flags);
+
+		ImGui::SetWindowFontScale(1.5f);
+		const char *text = "Загрузка...";
+		ImVec2 textSize = ImGui::CalcTextSize(text);
+		ImGui::SetCursorPos(ImVec2((io.DisplaySize.x - textSize.x) * 0.5f,
+		                           (io.DisplaySize.y - textSize.y) * 0.5f));
+		ImGui::Text("%s", text);
+		ImGui::SetWindowFontScale(1.0f);
+
+		ImGui::End();
+
+		ImGui::Render();
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+		glfwSwapBuffers(window);
+	}
+}
+
 // Required game files - if any missing, game cannot start
 const std::vector<std::string>& 
 Launcher::GetRequiredFiles()
@@ -391,17 +441,37 @@ Launcher::Run()
 	// No resources found - show UI
 	fprintf(stderr, "Launcher: Resources not found, showing UI...\n");
 
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+	// Use same profile iteration as librw gl3device.cpp startGLFW()
+	static struct { int gl; int major, minor; } profiles[] = {
+		{ GLFW_OPENGL_API,    3, 3 },
+		{ GLFW_OPENGL_API,    2, 1 },
+		{ GLFW_OPENGL_ES_API, 3, 1 },
+		{ GLFW_OPENGL_ES_API, 2, 0 },
+		{ 0, 0, 0 },
+	};
 
-	GLFWwindow *window = glfwCreateWindow(720, 480, "REVC Launcher", nullptr, nullptr);
+	GLFWwindow *window = nullptr;
+	int profileIdx = -1;
 
-	// Fallback to OpenGL if GLES failed
-	if (!window) {
-		fprintf(stderr, "Launcher: GLES2 failed, trying OpenGL...\n");
-		glfwDefaultWindowHints();
-		window = glfwCreateWindow(720, 480, "REVC Launcher", nullptr, nullptr);
+	// Create the window fullscreen with the native video mode right away:
+	// the game reuses this exact window and context (see startGLFW in librw),
+	// and AURORAOS picks the first (native) exclusive video mode anyway.
+	GLFWmonitor *monitor = glfwGetPrimaryMonitor();
+	const GLFWvidmode *mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
+	if (!monitor || !mode) {
+		fprintf(stderr, "Launcher: Failed to get primary monitor video mode\n");
+		return Result::Exit;
+	}
+
+	for(int i = 0; profiles[i].gl; i++){
+		glfwWindowHint(GLFW_CLIENT_API, profiles[i].gl);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, profiles[i].major);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, profiles[i].minor);
+		window = glfwCreateWindow(mode->width, mode->height, "REVC", monitor, nullptr);
+		if(window){
+			profileIdx = i;
+			break;
+		}
 	}
 
 	if (!window) {
@@ -409,13 +479,15 @@ Launcher::Run()
 		return Result::Exit;
 	}
 
-	// Maximize window
-	glfwMaximizeWindow(window);
+	bool isGLES = (profiles[profileIdx].gl == GLFW_OPENGL_ES_API);
+	int glversion = profiles[profileIdx].major * 10 + profiles[profileIdx].minor;
 
 	glfwMakeContextCurrent(window);
 
-	if (!gladLoadGLES2Loader((GLADloadproc)glfwGetProcAddress, 20)) {
-		fprintf(stderr, "Launcher: Failed to load GLES2\n");
+	if(!((isGLES ? gladLoadGLES2Loader : gladLoadGLLoader)
+		((GLADloadproc)glfwGetProcAddress, glversion)))
+	{
+		fprintf(stderr, "Launcher: Failed to load GL\n");
 		glfwDestroyWindow(window);
 		return Result::Exit;
 	}
@@ -423,12 +495,6 @@ Launcher::Run()
 	glfwSwapInterval(1);
 
 	// Get DPI scale
-	// float xscale = 1.0f, yscale = 1.0f;
-	// glfwGetWindowContentScale(window, &xscale, &yscale);
-	// float dpiScale = (xscale > yscale) ? xscale : yscale;
-	// if (dpiScale < 1.0f) dpiScale = 1.0f;
-
-	// xscale = yscale = dpiScale = 2.5f;
 	float dpiScale = CalculateDpiScale(window);
 
 	// Initialize ImGui
@@ -626,16 +692,26 @@ Launcher::Run()
 		// }
 	}
 
+	if (result == Result::Continue) {
+		// Show a static "Loading..." frame - it stays on screen while the game
+		// initializes synchronously and until it renders its own first frame
+		DrawLoadingFrame(window);
+	}
+
 	// Cleanup ImGui
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 
-	// Destroy launcher window, but keep GLFW initialized for RE3
-	glfwDestroyWindow(window);
-
-	// Reset window hints to defaults for RE3
-	glfwDefaultWindowHints();
+	if (result == Result::Continue) {
+		// Keep the window and GL context alive - the game reuses them,
+		// see startGLFW() in librw gl3device.cpp
+		glfwSetWindowShouldClose(window, GLFW_FALSE);
+		ms_window = window;
+	} else {
+		glfwDestroyWindow(window);
+		ms_window = nullptr;
+	}
 
 	return result;
 }
